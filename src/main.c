@@ -7,6 +7,8 @@ typedef struct Vec2 {
   float x;
   float y;
 } Vec2;
+typedef Vec2 Position;
+typedef Vec2 Velocity;
 
 typedef struct Shape {
   float radius;
@@ -14,14 +16,32 @@ typedef struct Shape {
 } Shape;
 #pragma endregion
 
+typedef enum ComponentType {
+  CVEC2,
+  CPOSITION,
+  CVELOCITY,
+  CSHAPE
+} ComponentType;
+
+typedef struct Component {
+  ComponentType type;
+  union {
+    Position* pos;
+    Velocity* velocity;
+    Shape* shape;
+  };
+} Component;
+
+
 typedef struct Entity {
   int id;
-  void* components;
+  int totalComponents;
+  Component* components;
 } Entity;
 
 typedef struct EntityManager {
   int totalEntities;
-  Entity * entities;
+  Entity *entities;
 } EntityManager;
 
 typedef struct AppState {
@@ -30,11 +50,24 @@ typedef struct AppState {
   EntityManager* entityManager;
 } AppState;
 
+int addComponent(Entity* entity)
+{
+  int compPosition = entity->totalComponents;
+  ++entity->totalComponents;
+  SDL_realloc(entity->components, entity->totalComponents);
+
+  Component *c = SDL_malloc(sizeof(Component));
+  entity->components[compPosition] = *c;
+  return compPosition;
+}
+
 void addEntity(EntityManager *entityManager)
 {
   Entity *entity = SDL_calloc(1, sizeof(Entity));
+  entity->components = SDL_calloc(0, sizeof(Component));
+
   entity->id = entityManager->totalEntities;
-  printf("Adding entity with ID %d - %p\n", entity->id, &entity);
+  printf("Adding entity with ID %d - C(%d) - %p\n", entity->id, entity->totalComponents, &entity);
   ++entityManager->totalEntities;
   SDL_realloc(entityManager->entities, entityManager->totalEntities);
   entityManager->entities[entity->id] = *entity;
@@ -64,6 +97,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
   addEntity(as->entityManager);
   addEntity(as->entityManager);
   addEntity(as->entityManager);
+
+  Entity *e = &as->entityManager->entities[0];
+  int cPos = addComponent(e);
+  Position *pos = SDL_calloc(1, sizeof(Position));
+  pos->y = 20.0;
+  pos->x = 10.0;
+  Component *c = &e->components[cPos];
+  c->type = CPOSITION;
+  c->pos = pos;
 
   if (!SDL_CreateWindowAndRenderer("shapes-destroyer", 1280, 720, 0, &as->window, &as->renderer))
     return SDL_APP_FAILURE;
@@ -98,7 +140,16 @@ void printEntities(EntityManager *em)
 {
   printf("------\n");
   for (int i =0; i < em->totalEntities; i++) {
-    printf("Entity %d - %p\n", em->entities[i].id, &em->entities[i]);
+    Entity * e = &em->entities[i];
+    printf("Entity %d\n", e->id);
+    for (int j = 0; j < e->totalComponents; ++j) {
+      Component *c = &e->components[j];
+      printf("Component type %d\n", c->type);
+      if (c->type ==  CPOSITION) {
+        c->pos->x++;
+        printf("Entity position (%f, %f)\n", c->pos->x, c->pos->y);
+      }
+    }
   }
 }
 
@@ -107,6 +158,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
   AppState * as = (AppState *)appstate;
 
   printEntities(as->entityManager);
+  // exit immediately
+  /*return SDL_APP_SUCCESS;*/
   
   SDL_SetRenderDrawColor(as->renderer, 0, 0, 0, 255);
   SDL_RenderClear(as->renderer);
@@ -121,6 +174,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     AppState *as = (AppState *)appstate;
     SDL_DestroyRenderer(as->renderer);
     SDL_DestroyWindow(as->window);
+    SDL_free(as->entityManager->entities);
+    SDL_free(as->entityManager);
     SDL_free(as);
   }
 }
