@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30 FATAL_ERROR)
-
 project(shapes-destroyer)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_executable(${PROJECT_NAME} src/main.c)
 set_property(TARGET ${PROJECT_NAME} PROPERTY C_STANDARD 23)
 
