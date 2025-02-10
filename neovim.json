@@ -1,0 +1,1 @@
+{"cmake":{"target":"shapes-destroyer","dap_name":"lldb","args":{"configure":["-D","CMAKE_EXPORT_COMPILE_COMMANDS=1","-G","Unix Makefiles", "-j", "10"]},"build_dir":"{cwd}\/build","build_type":"Debug","cmd":"cmake"},"cargo":{"dap_name":"lldb"}}

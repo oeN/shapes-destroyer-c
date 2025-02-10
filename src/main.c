@@ -2,7 +2,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
-#define STEP_RATE_IN_MILLISECONDS 17
+#define STEP_RATE_IN_MILLISECONDS 16.666667
 
 #pragma region Components
 typedef struct Vec2
@@ -73,6 +73,8 @@ Component *findComponent(Entity *entity, ComponentType componentType);
 void renderRectSystem(EntityManager *em, AppState *as);
 #pragma endregion
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wincompatible-pointer-types"
 void increaseArray(void **array, size_t elementSize, int *currentSize)
 {
   *currentSize += 1;
@@ -82,6 +84,7 @@ void increaseArray(void **array, size_t elementSize, int *currentSize)
     SDL_Log("Failed to reallocate memory");
   }
 }
+#pragma clang diagnostic pop
 
 void addEntity(EntityManager *entityManager)
 {
@@ -91,7 +94,11 @@ void addEntity(EntityManager *entityManager)
   entity->components = NULL;
   entity->archetype = 0;
 
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wincompatible-pointer-types"
   increaseArray(&entityManager->entities, sizeof(Entity *), &entityManager->totalEntities);
+#pragma clang diagnostic pop
 
   SDL_Log("Adding entity with ID %d - C(%d) - %p\n", entity->id, entity->totalComponents, entity);
   entityManager->entities[entity->id] = entity;
@@ -107,6 +114,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     return SDL_APP_FAILURE;
 
   *appstate = as;
+  as->last_step = SDL_GetTicks();
 
   // spawn a single entity
   spawnEntity(&as->entityManager, true);
@@ -200,7 +208,12 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 
 void addComponent(Entity *entity, Component *c)
 {
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wincompatible-pointer-types"
   increaseArray(&entity->components, sizeof(Component *), &entity->totalComponents);
+#pragma clang diagnostic pop
+
   entity->components[entity->totalComponents - 1] = c;
   entity->archetype |= c->type;
 }
