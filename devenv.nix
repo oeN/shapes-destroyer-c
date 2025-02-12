@@ -3,6 +3,7 @@
 {
   packages = with pkgs; [ 
     cmake
+    lldb
   ];
 
   languages.c.enable = true;

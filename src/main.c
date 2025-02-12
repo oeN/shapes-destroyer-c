@@ -1,111 +1,35 @@
+#include <stdint.h>
+#include <stdlib.h>
+#include <time.h>
+
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "base.h"
+#include "entity.h"
+
 #define STEP_RATE_IN_MILLISECONDS 16.666667
+#define SCREEN_WIDTH 1280
+#define SCREEN_HEIGHT 720
 
-#pragma region Components
-typedef struct Vec2
-{
-  float x;
-  float y;
-} Vec2;
-typedef Vec2 Position;
-typedef Vec2 Velocity;
-
-typedef struct Shape
-{
-  float radius;
-  int pointCount;
-} Shape;
-#pragma endregion
-
-typedef enum ComponentType
-{
-  CVEC2 = 1,
-  CPOSITION = 1 << 1,
-  CVELOCITY = 1 << 2,
-  CSHAPE = 1 << 3
-} ComponentType;
-
-typedef struct Component
-{
-  ComponentType type;
-  union
-  {
-    Position *pos;
-    Velocity *velocity;
-    Shape *shape;
-  };
-} Component;
-
-typedef struct Entity
-{
-  int id;
-  int totalComponents;
-  int archetype;
-  Component **components;
-} Entity;
-
-typedef struct EntityManager
-{
-  int totalEntities;
-  Entity **entities;
-} EntityManager;
 
 typedef struct AppState
 {
   SDL_Window *window;
   SDL_Renderer *renderer;
-  EntityManager entityManager;
-  int addEntityEachNFrames;
-  int remainingFrames;
+  EntityManager *entityManager;
   Uint64 last_step;
 } AppState;
 
-#pragma region Declarations
-void printEntities(EntityManager *em);
-void addComponent(Entity *entity, Component *c);
-// void spawnEntity(EntityManager *em);
-void spawnEntity(EntityManager *em, bool addComponents);
 void moveSystem(EntityManager *em);
-Component *findComponent(Entity *entity, ComponentType componentType);
 void renderRectSystem(EntityManager *em, AppState *as);
-#pragma endregion
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wincompatible-pointer-types"
-void increaseArray(void **array, size_t elementSize, int *currentSize)
-{
-  *currentSize += 1;
-  *array = SDL_realloc(*array, (*currentSize) * elementSize);
-  if (*array == NULL)
-  {
-    SDL_Log("Failed to reallocate memory");
-  }
-}
-#pragma clang diagnostic pop
-
-void addEntity(EntityManager *entityManager)
-{
-  Entity *entity = SDL_malloc(sizeof(Entity));
-  entity->id = entityManager->totalEntities;
-  entity->totalComponents = 0;
-  entity->components = NULL;
-  entity->archetype = 0;
-
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wincompatible-pointer-types"
-  increaseArray(&entityManager->entities, sizeof(Entity *), &entityManager->totalEntities);
-#pragma clang diagnostic pop
-
-  SDL_Log("Adding entity with ID %d - C(%d) - %p\n", entity->id, entity->totalComponents, entity);
-  entityManager->entities[entity->id] = entity;
-}
+void keepInBoundsSystem(EntityManager *em);
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 {
+  srand(time(NULL)); // use current time as seed for random generator
+
   if (!SDL_Init(SDL_INIT_VIDEO))
     return SDL_APP_FAILURE;
 
@@ -114,12 +38,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     return SDL_APP_FAILURE;
 
   *appstate = as;
+  as->entityManager = SDL_calloc(1, sizeof(EntityManager));
   as->last_step = SDL_GetTicks();
 
   // spawn a single entity
-  spawnEntity(&as->entityManager, true);
+  int entityLimit = 100;
+  for (int i = 0; i < entityLimit; i++) {
+    spawnEntity(as->entityManager, true);
+  }
 
-  if (!SDL_CreateWindowAndRenderer("shapes-destroyer", 1280, 720, 0, &as->window, &as->renderer))
+  if (!SDL_CreateWindowAndRenderer("shapes-destroyer", SCREEN_WIDTH, SCREEN_HEIGHT, 0, &as->window, &as->renderer))
     return SDL_APP_FAILURE;
 
   return SDL_APP_CONTINUE;
@@ -150,31 +78,6 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
   return SDL_APP_CONTINUE;
 }
 
-void printEntities(EntityManager *em)
-{
-  if (em->totalEntities <= 0)
-    return;
-  printf("------\n");
-  for (int i = 0; i < em->totalEntities; i++)
-  {
-    Entity *e = em->entities[i];
-    printf("Entity ID(%d) - C(%d) - addr(%p) - archetype(%d)\n", e->id, e->totalComponents, e, e->archetype);
-
-    for (int j = 0; j < e->totalComponents; ++j)
-    {
-      Component *c = e->components[j];
-      printf("Component type %d\n", c->type);
-      if (c->type == CPOSITION)
-      {
-        c->pos->x++;
-        printf("Entity position (%f, %f)\n", c->pos->x, c->pos->y);
-        /*Component *anotherC = e->componentsMap[CPOSITION].value;*/
-        /*printf("Entity position from map (%f, %f)\n", anotherC->pos.x, anotherC->pos.y);*/
-      }
-    }
-  }
-}
-
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
   AppState *as = (AppState *)appstate;
@@ -182,14 +85,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
   while ((now - as->last_step) >= STEP_RATE_IN_MILLISECONDS)
   {
-    moveSystem(&as->entityManager);
+    moveSystem(as->entityManager);
+    keepInBoundsSystem(as->entityManager);
     as->last_step += STEP_RATE_IN_MILLISECONDS;
   }
 
   SDL_SetRenderDrawColor(as->renderer, 0, 0, 0, 255);
   SDL_RenderClear(as->renderer);
 
-  renderRectSystem(&as->entityManager, as);
+  renderRectSystem(as->entityManager, as);
 
   SDL_RenderPresent(as->renderer);
   return SDL_APP_CONTINUE;
@@ -206,85 +110,26 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
   }
 }
 
-void addComponent(Entity *entity, Component *c)
-{
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wincompatible-pointer-types"
-  increaseArray(&entity->components, sizeof(Component *), &entity->totalComponents);
-#pragma clang diagnostic pop
-
-  entity->components[entity->totalComponents - 1] = c;
-  entity->archetype |= c->type;
-}
-
-void spawnEntity(EntityManager *em, bool addComponents)
-{
-  if (em->totalEntities >= 10)
-    return;
-
-  addEntity(em);
-  // every 10th entity add a position component
-  if (addComponents)
-  {
-    Entity *e = em->entities[em->totalEntities - 1];
-
-    Position *pos = SDL_malloc(sizeof(Position));
-    pos->x = 10.0;
-    pos->y = 20.0;
-
-    Component *c = SDL_malloc(sizeof(Component));
-    c->type = CPOSITION;
-    c->pos = pos;
-
-    addComponent(e, c);
-
-    Velocity *vel = SDL_malloc(sizeof(Velocity));
-    vel->x = 1.0;
-    vel->y = 0.0;
-
-    Component *c2 = SDL_malloc(sizeof(Component));
-    c2->type = CVELOCITY;
-    c2->velocity = vel;
-
-    addComponent(e, c2);
-  }
-}
-
 void moveSystem(EntityManager *em)
 {
   Entity **entities = em->entities;
   for (int i = 0; i < em->totalEntities; ++i)
   {
     Entity *e = entities[i];
-    unsigned int toFind = CPOSITION | CVELOCITY;
 
     if (e->totalComponents <= 0)
       continue;
 
-    if (!((e->archetype & toFind) == toFind))
-      continue;
-
-    Component *c = findComponent(e, CPOSITION);
-    Position *pos = c->pos;
-    c = findComponent(e, CVELOCITY);
-    Velocity *vel = c->velocity;
-
+    Position *pos = findComponent(e, "Position");;
     if (!pos)
-    {
-      SDL_LogError(SDL_LOG_PRIORITY_CRITICAL, "Position not found\n");
       continue;
-    }
+
+    const Position *vel = findComponent(e, "Velocity");;
     if (!vel)
-    {
-      SDL_LogError(SDL_LOG_PRIORITY_CRITICAL, "Velocity not found\n");
       continue;
-    }
 
     pos->x += vel->x;
     pos->y += vel->y;
-
-    // SDL_Log("Entity ID (%d) current position (%f, %f)", e->id, pos->x, pos->y);
   }
 }
 
@@ -294,29 +139,18 @@ void renderRectSystem(EntityManager *em, AppState *as)
   for (int i = 0; i < em->totalEntities; ++i)
   {
     Entity *e = entities[i];
-    unsigned int toFind = CPOSITION | CVELOCITY;
 
     if (e->totalComponents <= 0)
       continue;
 
-    if (!((e->archetype & toFind) == toFind))
-      continue;
 
-    Component *c = findComponent(e, CPOSITION);
-    const Position *pos = c->pos;
-    c = findComponent(e, CVELOCITY);
-    const Velocity *vel = c->velocity;
-
+    const Position *pos = findComponent(e, "Position");;
     if (!pos)
-    {
-      SDL_LogError(SDL_LOG_PRIORITY_CRITICAL, "Position not found\n");
       continue;
-    }
+
+    const Position *vel = findComponent(e, "Velocity");;
     if (!vel)
-    {
-      SDL_LogError(SDL_LOG_PRIORITY_CRITICAL, "Velocity not found\n");
       continue;
-    }
 
     SDL_FRect r = {
         .x = pos->x,
@@ -324,22 +158,38 @@ void renderRectSystem(EntityManager *em, AppState *as)
         .w = 50.0,
         .h = 50.0,
     };
-    SDL_SetRenderDrawColor(as->renderer, 255, 0, 0, 255);
+    int red = 255;
+    int green = 0;
+    int blue = 0;
+    SDL_SetRenderDrawColor(as->renderer, red, green, blue, 255);
     SDL_RenderRect(as->renderer, &r);
-
-    // SDL_Log("Rendering rect at (%f, %f)", pos->x, pos->y);
   }
 }
 
-Component *findComponent(Entity *entity, ComponentType componentType)
+void keepInBoundsSystem(EntityManager *em)
 {
-  // TODO: improve me, it currently perform just a linear search
-  for (int i = 0; i < entity->totalComponents; ++i)
+  Entity **entities = em->entities;
+  for (int i = 0; i < em->totalEntities; ++i)
   {
-    Component *c = entity->components[i];
-    if (c->type == componentType)
-      return c;
-  }
+    Entity *e = entities[i];
 
-  return NULL;
+    if (e->totalComponents <= 0)
+      continue;
+
+
+    Position *pos = findComponent(e, "Position");
+    if (!pos)
+      continue;
+
+    Velocity *vel = findComponent(e, "Velocity");
+    if (!vel)
+      continue;
+
+    if (pos->x > SCREEN_WIDTH || pos->x < 0)
+      vel->x *= -1;
+
+    if (pos->y > SCREEN_HEIGHT || pos->y < 0)
+      vel->y *= -1;
+  }
 }
+
