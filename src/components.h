@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+
 typedef struct Component
 {
   unsigned long hash;
@@ -36,10 +37,6 @@ typedef struct Lifetime
   uint64_t remaininigTimeToLive;
 } Lifetime;
 
-// TODO: add a type that could hold the 4 values of a color (r,g,b,a)
-// TODO: add a color component
-// TODO: add the color component to each rect
-// TODO: use the color component to render the rect
 
 enum ActionState 
 {

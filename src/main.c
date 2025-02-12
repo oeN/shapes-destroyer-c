@@ -293,10 +293,13 @@ void renderShapeSystem(EntityManager *em, AppState *as)
     SDL_SetRenderDrawColor(as->renderer, color->r, color->g, color->b, color->a);
 
     float unitAngle = 360.0f/shape->pointCount;
-    /*printf("---- unitAngle %f\n", unitAngle);*/
+
     Node *first = SDL_calloc(1, sizeof(Node));
     Node *point = first;
 
+    // TODO: probably this whole loop can be moved into a function, it could be useful
+    // at least for this game to have a function that given an angle and a center returns
+    // a list of vertices where to draw the lines
     for (float currentAngle = unitAngle; currentAngle <= 360.0f; currentAngle += unitAngle)
     {
       Vec2 *directionVector = SDL_calloc(1, sizeof(Vec2));
@@ -304,9 +307,9 @@ void renderShapeSystem(EntityManager *em, AppState *as)
       extendVec2(directionVector, shape->radius);
       addToVec2(directionVector, pos);
       point->value = directionVector;
+      // TODO: move the node init to a function? could we use the struct trick with function pointers?
       point->next = SDL_calloc(1, sizeof(Node));
       point = point->next;
-      /*printf("---- i %d - (%f, %f)\n", i, directionVector.x, directionVector.y);*/
     }
 
     Node *current = first;
@@ -317,6 +320,7 @@ void renderShapeSystem(EntityManager *em, AppState *as)
         // draw the line
         Vec2 *lhs = prev->value;
         Vec2 *rhs = current->value;
+        // TODO: move me to a function
         SDL_RenderLine(as->renderer, lhs->x, lhs->y, rhs->x, rhs->y);
       }
       prev = current;
