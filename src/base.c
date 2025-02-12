@@ -1,7 +1,28 @@
 #include <stdlib.h> 
+#include <SDL3/SDL.h>
 
 #include "base.h"
-#include <SDL3/SDL.h>
+#include "types.h"
+
+void freeList(Node *node)
+{
+  while (node->next)
+  {
+    Node *old = node;
+    node = node->next;
+    SDL_free(old);
+  }
+  SDL_free(node);
+}
+
+String initString(char *value)
+{
+  String s = {
+    .value = value,
+    .size = sizeof(value)
+  };
+  return s;
+}
 
 void increaseArray(void **array, size_t elementSize, int *currentSize)
 {
@@ -25,5 +46,5 @@ unsigned long hash(unsigned char *str) {
 
 int randomClamped(int min, int max)
 {
-  return rand()/((RAND_MAX + (unsigned)min)/max);
+  return rand() % (max + 1 - min) + min;
 }

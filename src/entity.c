@@ -4,52 +4,78 @@
 #include "entity.h"
 
 
-void addComponent(Entity *entity, Component *c)
+Component* addComponent(EntityManager *em, Entity *entity, ComponentName componentName, void *value)
 {
+  int entityId = entity->id;
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wincompatible-pointer-types"
-  increaseArray(&entity->components, sizeof(Component *), &entity->totalComponents);
+  increaseArray(&em->components[entityId], sizeof(Component *), &entity->totalComponents);
 #pragma clang diagnostic pop
 
-  entity->components[entity->totalComponents - 1] = c;
+  Component *c = SDL_calloc(1, sizeof(Component));
+  c->hash = hash(componentName);
+  c->value = value;
+
+  em->components[entityId][entity->totalComponents - 1] = c;
+  return c;
 }
 
-void *findComponent(Entity *entity, unsigned char *componentName)
+Component *addComponentToCurrentPlayer(EntityManager *em, ComponentName componentName, void *value)
 {
-  unsigned long hashedNam = hash(componentName);
+  Entity* player = getPlayer(em); 
+  if (!player) return NULL;
+
+  return addComponent(em, player, componentName, value);
+}
+
+// TODO: make it return a full component and add another function
+// that returns just the value
+void *findComponent(EntityManager *em, Entity *entity, ComponentName componentName)
+{
+  int entityId = entity->id;
+  unsigned long hashedName = hash(componentName);
+  Component *foundComponent = NULL;
 
   // TODO: improve me, it currently perform just a linear search
   for (int i = 0; i < entity->totalComponents; ++i)
   {
-    Component *c = entity->components[i];
-    if (c->hash == hashedNam)
-      return c->value;
+    Component *c = em->components[entityId][i];
+    if (c->hash == hashedName) {
+      foundComponent = c;
+      break;
+    }
   }
 
-  return NULL;
+  if (!foundComponent)
+    return NULL;
+
+  return foundComponent->value;
 }
 
 void addEntity(EntityManager *entityManager)
 {
-  Entity *entity = SDL_malloc(sizeof(Entity));
+  Entity *entity = SDL_calloc(1, sizeof(Entity));
   entity->id = entityManager->totalEntities;
   entity->totalComponents = 0;
-  entity->components = NULL;
 
+  // is needed to increase the array of components but we don't need to keep
+  // track of it, since the totalEntities counter will suffice
+  int totalEntities = entityManager->totalEntities;
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wincompatible-pointer-types"
   increaseArray(&entityManager->entities, sizeof(Entity *), &entityManager->totalEntities);
+  increaseArray(&entityManager->components, sizeof(Component **),&totalEntities);
 #pragma clang diagnostic pop
 
   entityManager->entities[entity->id] = entity;
+  entityManager->components[entity->id] = NULL;
 }
 
 void spawnEntity(EntityManager *em, bool addComponents)
 {
   addEntity(em);
-  // every 10th entity add a position component
   if (addComponents)
   {
     Entity *e = em->entities[em->totalEntities - 1];
@@ -57,21 +83,36 @@ void spawnEntity(EntityManager *em, bool addComponents)
     Position *pos = SDL_malloc(sizeof(Position));
     pos->x = randomClamped(1, 1280);
     pos->y = randomClamped(1, 720);
-
-    Component *c = SDL_malloc(sizeof(Component));
-    c->hash = hash("Position");
-    c->value = pos;
-
-    addComponent(e, c);
+    addComponent(em, e, "Position", pos);
 
     Velocity *vel = SDL_malloc(sizeof(Velocity));
     vel->x = randomClamped(5, 20);
     vel->y = randomClamped(5, 20);
+    addComponent(em, e, "Velocity", vel);
 
-    Component *c2 = SDL_malloc(sizeof(Component));
-    c2->hash = hash("Velocity");
-    c2->value = vel;
+    Color *color = SDL_malloc(sizeof(Color));
+    color->r = randomClamped(0, 255);
+    color->g = randomClamped(0, 255);
+    color->b = randomClamped(0, 255);
+    color->a = 255;
+    addComponent(em, e, "Color", color);
 
-    addComponent(e, c2);
+    Shape *shape = SDL_malloc(sizeof(Shape));
+    shape->pointCount = randomClamped(3, 8);
+    shape->radius = randomClamped(20, 30);
+    addComponent(em, e, "Shape", shape);
   }
+}
+
+Entity *getPlayer(EntityManager *em)
+{
+  // FIXME: for now we assume the first entity the player
+  // implement a proper way to retrieve the player
+  if (em->totalEntities == 0) return NULL;
+
+  return em->entities[0];
+}
+
+void removeComponent(EntityManager *em, Component *c, int entityId)
+{
 }

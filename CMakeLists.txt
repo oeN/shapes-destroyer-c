@@ -6,6 +6,8 @@ file(GLOB SRC_SOURCES "src/*.c")
 add_executable(${PROJECT_NAME} ${SRC_SOURCES})
 set_property(TARGET ${PROJECT_NAME} PROPERTY C_STANDARD 23)
 
+target_compile_options(${PROJECT_NAME} PRIVATE -Wno-pointer-sign)
+
 
 include(cmake/CPM.cmake)
 
