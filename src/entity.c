@@ -94,9 +94,7 @@ Entity *getEntity(EntityManager *entityManager, int entityId)
 
 void addEntity(EntityManager *entityManager, NewEntityParams params)
 {
-  Entity *entity = SDL_calloc(1, sizeof(Entity));
-  entity->id = entityManager->totalEntities;
-  entity->totalComponents = 0;
+  int entityId = entityManager->totalEntities;
 
   // is needed to increase the array of components but we don't need to keep
   // track of it, since the totalEntities counter will suffice
@@ -105,10 +103,9 @@ void addEntity(EntityManager *entityManager, NewEntityParams params)
   increaseArray(&entityManager->entities, sizeof(Entity), &entityManager->totalEntities);
   increaseArray(&entityManager->components, sizeof(Component),&totalEntities);
 
-  // FIXME: this is wrong I should go back to the array of pointer or find another solution
-  // to handle memory if I don't want to free each entity by itself
-  entityManager->entities[entity->id] = *entity;
-  SDL_Log("created entity %p, saved entity %p", entity, &entityManager->entities[entity->id]);
+  entityManager->entities[entityId] = (Entity){0};
+  Entity *entity = &entityManager->entities[entityId];
+  entity->id = entityId;
   entityManager->components[entity->id] = NULL;
 
   if (params.tag) {
