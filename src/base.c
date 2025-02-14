@@ -4,6 +4,11 @@
 #include "base.h"
 #include "types.h"
 
+int arraySize(void *array)
+{
+  return sizeof(array)/sizeof(array[0]);
+}
+
 void freeList(Node *node)
 {
   while (node->next)

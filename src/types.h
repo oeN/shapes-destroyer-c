@@ -1,8 +1,14 @@
 #pragma once
+#include <stdint.h>
+#include <SDL3/SDL_keycode.h>
 
 #include "components.h"
-#include <SDL3/SDL_keycode.h>
-#include <stdint.h>
+#include "entity.h"
+
+typedef struct GameContext
+{
+  EntityManager entityManager;
+} GameContext;
 
 typedef struct Node
 {
@@ -33,3 +39,4 @@ typedef struct Scene
   ActionMap *actions;
   String name;
 } Scene;
+

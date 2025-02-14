@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.30 FATAL_ERROR)
-project(shapes-destroyer)
+project(main)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 file(GLOB SRC_SOURCES "src/*.c")
