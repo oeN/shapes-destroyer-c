@@ -10,6 +10,7 @@ typedef struct Entity {
 
 typedef enum EntityTag { //
   NONE = 0,
+  ALL,
   PLAYER,
   ENEMY,
   BULLET

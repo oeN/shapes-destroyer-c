@@ -24,6 +24,41 @@ void initArena(memory_arena *arena, memory_size totalSize) {
 
 void freeArena(memory_arena *arena) { free(arena->startAddress); }
 
+void pushToLinkedList(memory_arena *arena, linked_list_node **firstOrCurrent,
+                      linked_list_node *next) {
+  if (*firstOrCurrent == NULL) {
+    *firstOrCurrent = pushStruct(arena, linked_list_node);
+  }
+
+  linked_list_node *properTarget = *firstOrCurrent;
+  while (properTarget->next != NULL) {
+    properTarget = properTarget->next;
+  }
+  properTarget->next = next;
+  next->next = NULL;
+}
+
+linked_list_node *popFromLinkedList(linked_list_node *firstOrCurrent) {
+  if (!firstOrCurrent)
+    return NULL;
+
+  if (!firstOrCurrent->next)
+    return NULL;
+
+  linked_list_node *node = firstOrCurrent;
+  linked_list_node *prev = NULL;
+  while (node->next) {
+    prev = node;
+    node = node->next;
+  }
+
+  // remove the link to the last node
+  prev->next = NULL;
+
+  // return the last one
+  return node;
+}
+
 void *_pushSize(memory_arena *arena, memory_size sizeToPush) {
   void *result = 0;
 
@@ -40,3 +75,5 @@ void *_pushSize(memory_arena *arena, memory_size sizeToPush) {
 
   return result;
 }
+
+void *_getNodeValue(linked_list_node *node) { return node->value; }

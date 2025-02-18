@@ -7,6 +7,7 @@
 #include "entity.h"
 
 void EntityManager_init(entity_manager *self) {
+  self->totalEntities = 0;
   for (int i = 0; i < 10; i++) {
     self->entitiesByTag[i] = (entities_by_tag){0};
     // there are problems while increasing array with the current memory
@@ -88,9 +89,13 @@ void *getComponentValue(entity_manager *em, entity *entity,
 }
 
 entity *getEntity(entity_manager *entityManager, int entityId) {
+  // printf("getEntity: retrieving ID %d - current entities %d\n", entityId,
+  //       entityManager->totalEntities);
   if (!(entityId < entityManager->totalEntities))
-    return nullptr;
+    return NULL;
 
+  // printf("getEntity: returning ID %d - address %p\n", entityId,
+  //       &entityManager->entities[entityId]);
   return &entityManager->entities[entityId];
 }
 
@@ -114,6 +119,8 @@ void addEntity(entity_manager *entityManager, new_entity_params params) {
   entityManager->totalEntities++;
 
   addTaggedEntity(entityManager, entity->id, params.tag);
+  // always add the entity to the ALL tag
+  addTaggedEntity(entityManager, entity->id, ALL);
 }
 
 void spawnEntity(entity_manager *em, bool addComponents) {
@@ -134,8 +141,13 @@ void spawnEntity(entity_manager *em, bool addComponents) {
     addComponent(em, e, "Position", pos);
 
     Velocity *vel = pushStruct(em->gameArena, Velocity);
-    vel->x = randomClamped(5, 20);
-    vel->y = randomClamped(5, 20);
+    if (params.tag == PLAYER) {
+      vel->x = 0;
+      vel->y = 0;
+    } else {
+      vel->x = randomClamped(5, 20);
+      vel->y = randomClamped(5, 20);
+    }
     addComponent(em, e, "Velocity", vel);
 
     Color *color = pushStruct(em->gameArena, Color);
@@ -158,11 +170,15 @@ int **getEntitiesByTag(entity_manager *em, u8 tag) {
 }
 
 entity *getEntityByTag(entity_manager *em, u8 tag, int position) {
+  // printf("getEntityByTag\n");
   entities_by_tag *tagContainer = &(em->entitiesByTag[tag]);
+  // printf("getEntityByTag: tagContainer %p - count %d\n", tagContainer,
+  //       tagContainer->count);
   if (position >= tagContainer->count)
-    return 0;
+    return NULL;
 
   int entityId = tagContainer->entityIds[position];
+  // printf("getEntityByTag: searching entity with ID %d\n", entityId);
   return getEntity(em, entityId);
 }
 
@@ -174,9 +190,6 @@ entity *setEntityByTag(entity **entity, entity_manager *em, u8 tag,
   return *entity;
 }
 
-entity *getPlayer(entity_manager *em) {
-  int playerId = em->entitiesByTag[PLAYER].entityIds[0];
-  return getEntity(em, playerId);
-}
+entity *getPlayer(entity_manager *em) { return getEntityByTag(em, PLAYER, 0); }
 
 void removeComponent(entity_manager *em, Component *c, int entityId) {}

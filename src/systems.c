@@ -120,7 +120,7 @@ void moveSystem(entity_manager *em) {
   int current_position = 0;
   entity *e = 0;
 
-  while (setEntityByTag(&e, em, ENEMY, current_position)) {
+  while (setEntityByTag(&e, em, ALL, current_position)) {
     current_position++;
 
     if (e->totalComponents <= 0)
@@ -162,14 +162,72 @@ void keepInBoundsSystem(entity_manager *em) {
   }
 }
 
-void handlePlayerInput(entity_manager *em) {
+void handlePlayerInput(linked_list_node *actionQueue, entity_manager *em) {
   entity *player = getPlayer(em);
   if (!player)
     return;
 
-  action *action = getComponentValue(em, player, "Action");
+  if (!actionQueue)
+    return;
 
-  // TODO: code to perform the action
+  Velocity *vel = getComponentValue(em, player, "Velocity");
+  if (!vel)
+    return;
 
-  /*removeComponent(em, ction, player->id);*/
+  float acceleration = 5.0;
+
+  // for now I'll reset the velocity
+  // vel->x = 0.0;
+  // vel->y = 0.0;
+
+  u32 count = 0;
+  linked_list_node *current = popFromLinkedList(actionQueue);
+  // TODO: handle the first action itself
+  // actually we cannot handle actions from the bottom, we've to handle them
+  // from the start and remove the value as we go or "Pop from the front"
+  while (current) {
+    if (!current->value)
+      continue;
+    /*action *currentAction = getNodeValue(current, action);*/
+    action *currentAction = (action *)current->value;
+
+    switch (currentAction->kind) {
+    case ACTION_UP:
+      if (currentAction->state == ACTION_STATE_START)
+        vel->y -= acceleration;
+      if (currentAction->state == ACTION_STATE_STOP)
+        vel->y += acceleration;
+
+      break;
+
+    case ACTION_DOWN:
+      if (currentAction->state == ACTION_STATE_START)
+        vel->y += acceleration;
+      if (currentAction->state == ACTION_STATE_STOP)
+        vel->y -= acceleration;
+
+      break;
+
+    case ACTION_LEFT:
+      if (currentAction->state == ACTION_STATE_START)
+        vel->x -= acceleration;
+      if (currentAction->state == ACTION_STATE_STOP)
+        vel->x += acceleration;
+
+      break;
+
+    case ACTION_RIGHT:
+      if (currentAction->state == ACTION_STATE_START)
+        vel->x += acceleration;
+      if (currentAction->state == ACTION_STATE_STOP)
+        vel->x -= acceleration;
+
+      break;
+
+    default:
+      break;
+    }
+
+    current = popFromLinkedList(actionQueue);
+  }
 }

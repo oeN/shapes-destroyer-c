@@ -4,17 +4,6 @@
 #include "base.h"
 #include "types.h"
 
-int arraySize(void *array) { return sizeof(array) / sizeof(array[0]); }
-
-void freeList(node *Node) {
-  while (Node->next) {
-    node *old = Node;
-    Node = Node->next;
-    SDL_free(old);
-  }
-  SDL_free(Node);
-}
-
 string initString(char *value) {
   string s = {.value = value, .size = sizeof(value)};
   return s;

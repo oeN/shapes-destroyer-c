@@ -4,12 +4,21 @@
 #include "base_types.h"
 
 typedef struct GameContext game_context;
+typedef struct Scene scene, *scene_ptr;
 
-typedef struct Node node;
-struct Node {
-  node *next;
-  void *value;
-};
+typedef enum ActionState {
+  ACTION_STATE_NONE,
+  ACTION_STATE_START,
+  ACTION_STATE_STOP
+} action_state;
+
+typedef enum ActionKind {
+  ACTION_NONE,
+  ACTION_UP,
+  ACTION_DOWN,
+  ACTION_LEFT,
+  ACTION_RIGHT,
+} action_kind;
 
 typedef struct String {
   char *value;
@@ -17,19 +26,9 @@ typedef struct String {
 } string;
 
 typedef struct Action {
-  uint8 action;
-  uint32 state;
+  action_kind kind;
+  action_state state;
 } action;
-
-typedef struct ActionMap {
-  SDL_Keycode keycode;
-  uint8 action;
-} action_map;
-
-typedef struct Scene {
-  action_map actions;
-  string name;
-} scene;
 
 typedef union Vec2 {
   struct {

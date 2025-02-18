@@ -23,5 +23,3 @@ typedef struct Lifetime {
   u64 timeToLive;
   u64 remaininigTimeToLive;
 } Lifetime;
-
-enum ActionState { START, STOP };
