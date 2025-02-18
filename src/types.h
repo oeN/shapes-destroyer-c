@@ -1,42 +1,46 @@
 #pragma once
-#include <stdint.h>
 #include <SDL3/SDL_keycode.h>
 
-#include "components.h"
-#include "entity.h"
+#include "base_types.h"
 
-typedef struct GameContext
-{
-  EntityManager entityManager;
-} GameContext;
+typedef struct GameContext game_context;
 
-typedef struct Node
-{
-  struct Node *next;
+typedef struct Node node;
+struct Node {
+  node *next;
   void *value;
-} Node;
+};
 
-typedef struct String
-{
+typedef struct String {
   char *value;
-  uint8_t size;
-} String;
+  u8 size;
+} string;
 
-typedef struct Action
-{
-  int action;
-  int state;
-} Action;
+typedef struct Action {
+  uint8 action;
+  uint32 state;
+} action;
 
-typedef struct ActionMap
-{
+typedef struct ActionMap {
   SDL_Keycode keycode;
-  int action;
-} ActionMap;
+  uint8 action;
+} action_map;
 
-typedef struct Scene 
-{
-  ActionMap *actions;
-  String name;
-} Scene;
+typedef struct Scene {
+  action_map actions;
+  string name;
+} scene;
 
+typedef union Vec2 {
+  struct {
+    float x, y;
+  };
+  float v[2];
+} vec2;
+
+typedef union Vec4 {
+  struct {
+    float r, g, b, a;
+  };
+  float v[4];
+} vec4;

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <SDL3/SDL_render.h>
 #include "entity.h"
+#include <SDL3/SDL_render.h>
 
-void moveSystem(EntityManager *em);
-void renderPlayerSystem(EntityManager *em, SDL_Renderer *renderer);
-void renderShapeSystem(EntityManager *em, SDL_Renderer *renderer);
-void keepInBoundsSystem(EntityManager *em);
-void handlePlayerInput(EntityManager *em);
+void moveSystem(entity_manager *em);
+void renderPlayerSystem(entity_manager *em, SDL_Renderer *renderer);
+void renderShapeSystem(game_context *gameContext, SDL_Renderer *renderer);
+void keepInBoundsSystem(entity_manager *em);
+void handlePlayerInput(entity_manager *em);

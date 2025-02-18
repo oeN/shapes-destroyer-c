@@ -3,52 +3,55 @@
 #include <SDL3/SDL.h>
 
 #include "base.h"
-#include "entity.h"
 #include "constants.h"
+#include "entity.h"
 
-void EntityManager_init(pEntityManager self)
-{
-  self->entitiesByTag = SDL_calloc(BULLET, sizeof(Entity**));
-  for (int i = 0; i < BULLET; i++)
-  {
-    self->entitiesByTag[i] = NULL;
+void EntityManager_init(entity_manager *self) {
+  for (int i = 0; i < 10; i++) {
+    self->entitiesByTag[i] = (entities_by_tag){0};
+    // there are problems while increasing array with the current memory
+    // arena implementation, in the exercise tab I'm going deeper with the
+    // handmade hero memory_arena but I could also try on my own first,
+    // let's see tomorrow morning
+    self->entitiesByTag[i].count = 0;
+    for (int c = 0; c < 512; c++)
+      self->entitiesByTag[i].entityIds[c] = 0;
   }
 }
 
-
-Component* addComponent(EntityManager *em, Entity *entity, ComponentName componentName, void *value)
-{
+Component *addComponent(entity_manager *em, entity *entity,
+                        component_name componentName, void *value) {
   int entityId = entity->id;
 
-  increaseArray(&em->components[entityId], sizeof(Component), &entity->totalComponents);
+  em->components[entityId][entity->totalComponents] =
+      (Component){.hash = hash(componentName), .value = value};
+  Component *c = &(em->components[entityId][entity->totalComponents]);
 
-  Component *c = SDL_calloc(1, sizeof(Component));
-  c->hash = hash(componentName);
-  c->value = value;
+  entity->totalComponents++;
 
-  em->components[entityId][entity->totalComponents - 1] = *c;
   return c;
 }
 
-Component *addComponentToCurrentPlayer(EntityManager *em, ComponentName componentName, void *value)
-{
-  Entity* player = getPlayer(em); 
-  if (!player) return NULL;
+Component *addComponentToCurrentPlayer(entity_manager *em,
+                                       component_name componentName,
+                                       void *value) {
+  entity *player = getPlayer(em);
+  if (!player)
+    return NULL;
 
   return addComponent(em, player, componentName, value);
 }
 
 // TODO: make it return a full component and add another function
 // that returns just the value
-Component *findComponent(EntityManager *em, Entity *entity, ComponentName componentName)
-{
+Component *findComponent(entity_manager *em, entity *entity,
+                         component_name componentName) {
   int entityId = entity->id;
   unsigned long hashedName = hash(componentName);
   Component *foundComponent = NULL;
 
   // TODO: improve me, it currently perform just a linear search
-  for (int i = 0; i < entity->totalComponents; ++i)
-  {
+  for (int i = 0; i < entity->totalComponents; ++i) {
     Component *c = &em->components[entityId][i];
     if (c->hash == hashedName) {
       foundComponent = c;
@@ -62,15 +65,15 @@ Component *findComponent(EntityManager *em, Entity *entity, ComponentName compon
   return foundComponent;
 }
 
-void *getComponentValue(EntityManager *em, Entity *entity, ComponentName componentName)
-{
+void *getComponentValue(entity_manager *em, entity *entity,
+                        component_name componentName) {
   int entityId = entity->id;
+
   unsigned long hashedName = hash(componentName);
   Component *foundComponent = NULL;
 
   // TODO: improve me, it currently perform just a linear search
-  for (int i = 0; i < entity->totalComponents; ++i)
-  {
+  for (int i = 0; i < entity->totalComponents; ++i) {
     Component *c = &em->components[entityId][i];
     if (c->hash == hashedName) {
       foundComponent = c;
@@ -84,83 +87,96 @@ void *getComponentValue(EntityManager *em, Entity *entity, ComponentName compone
   return foundComponent->value;
 }
 
-Entity *getEntity(EntityManager *entityManager, int entityId)
-{
+entity *getEntity(entity_manager *entityManager, int entityId) {
   if (!(entityId < entityManager->totalEntities))
     return nullptr;
 
   return &entityManager->entities[entityId];
 }
 
-void addEntity(EntityManager *entityManager, NewEntityParams params)
-{
-  int entityId = entityManager->totalEntities;
-
-  // is needed to increase the array of components but we don't need to keep
-  // track of it, since the totalEntities counter will suffice
-  int totalEntities = entityManager->totalEntities;
-
-  increaseArray(&entityManager->entities, sizeof(Entity), &entityManager->totalEntities);
-  increaseArray(&entityManager->components, sizeof(Component),&totalEntities);
-
-  entityManager->entities[entityId] = (Entity){0};
-  Entity *entity = &entityManager->entities[entityId];
-  entity->id = entityId;
-  entityManager->components[entity->id] = NULL;
-
-  if (params.tag) {
-    int len = sizeof(entityManager->entitiesByTag[params.tag])/sizeof(Entity*);
-    increaseArray(&entityManager->entitiesByTag[params.tag], sizeof(Entity *),&len);
-    SDL_Log("Entity for tag %d at position %d - with address %p", params.tag, (len - 2), entity);
-    entityManager->entitiesByTag[params.tag][len - 2] = entity;
-  }
+void addTaggedEntity(entity_manager *entityManager, u32 entityId, u8 tag) {
+  if (!tag)
+    return;
+  entities_by_tag *tagContainer = &(entityManager->entitiesByTag[tag]);
+  if (!tagContainer)
+    SDL_Log("THERE IS NO TAG CONTAINER");
+  tagContainer->entityIds[tagContainer->count] = entityId;
+  tagContainer->count++;
 }
 
-void spawnEntity(EntityManager *em, bool addComponents)
-{
-  NewEntityParams params = {};
+void addEntity(entity_manager *entityManager, new_entity_params params) {
+  int entityId = entityManager->totalEntities;
+
+  entityManager->entities[entityId] =
+      (entity){.id = entityId, .totalComponents = 0};
+  entity *entity = &entityManager->entities[entityId];
+  entity->id = entityId;
+  entityManager->totalEntities++;
+
+  addTaggedEntity(entityManager, entity->id, params.tag);
+}
+
+void spawnEntity(entity_manager *em, bool addComponents) {
+  new_entity_params params = {};
   if (em->totalEntities == 0)
     params.tag = PLAYER;
+  else
+    params.tag = ENEMY;
+
   addEntity(em, params);
 
-  if (addComponents)
-  {
-    Entity *e = getEntity(em, em->totalEntities - 1);
+  if (addComponents) {
+    entity *e = getEntity(em, em->totalEntities - 1);
 
-    Position *pos = SDL_malloc(sizeof(Position));
+    Position *pos = pushStruct(em->gameArena, Position);
     pos->x = randomClamped(1, SCREEN_WIDTH);
     pos->y = randomClamped(1, SCREEN_HEIGHT);
     addComponent(em, e, "Position", pos);
 
-    Velocity *vel = SDL_malloc(sizeof(Velocity));
+    Velocity *vel = pushStruct(em->gameArena, Velocity);
     vel->x = randomClamped(5, 20);
     vel->y = randomClamped(5, 20);
     addComponent(em, e, "Velocity", vel);
 
-    Color *color = SDL_malloc(sizeof(Color));
+    Color *color = pushStruct(em->gameArena, Color);
     color->r = randomClamped(0, 255);
     color->g = randomClamped(0, 255);
     color->b = randomClamped(0, 255);
     color->a = 255;
     addComponent(em, e, "Color", color);
 
-    Shape *shape = SDL_malloc(sizeof(Shape));
+    Shape *shape = pushStruct(em->gameArena, Shape);
     shape->pointCount = randomClamped(3, 8);
     shape->radius = randomClamped(20, 30);
     addComponent(em, e, "Shape", shape);
   }
 }
 
-Entity *getPlayer(EntityManager *em)
-{
-  // FIXME: find a proper way to return the player
-  int len = sizeof(em->entitiesByTag[PLAYER])/sizeof(Entity *);
-  Entity* player = em->entitiesByTag[PLAYER][0];
-  /*printf("There are %p players\n", player);*/
-  return player;
+int **getEntitiesByTag(entity_manager *em, u8 tag) {
+  // add guard clause to make sure the tag is one of the EntityTag
+  return em->entitiesByTag[tag].entityIds;
 }
 
-void removeComponent(EntityManager *em, Component *c, int entityId)
-{
+entity *getEntityByTag(entity_manager *em, u8 tag, int position) {
+  entities_by_tag *tagContainer = &(em->entitiesByTag[tag]);
+  if (position >= tagContainer->count)
+    return 0;
+
+  int entityId = tagContainer->entityIds[position];
+  return getEntity(em, entityId);
 }
 
+// I use this in a while loop but I don't know if it's needed or the
+// getEntityByTag can do both things
+entity *setEntityByTag(entity **entity, entity_manager *em, u8 tag,
+                       int position) {
+  *entity = getEntityByTag(em, tag, position);
+  return *entity;
+}
+
+entity *getPlayer(entity_manager *em) {
+  int playerId = em->entitiesByTag[PLAYER].entityIds[0];
+  return getEntity(em, playerId);
+}
+
+void removeComponent(entity_manager *em, Component *c, int entityId) {}

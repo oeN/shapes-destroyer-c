@@ -1,47 +1,27 @@
 #pragma once
 
-#include <stdint.h>
+#include "types.h"
 
-typedef struct Component
-{
+typedef struct Component {
+  // FIXME: we should be able to calculate the hash, for each component, only
+  // one time
   unsigned long hash;
   void *value;
 } Component;
 
-typedef struct Vec2
-{
-  float x;
-  float y;
-} Vec2;
-typedef Vec2 Position;
-typedef Vec2 Velocity;
+typedef vec2 Position;
+typedef vec2 Velocity;
 
-typedef union Vec4
-{ 
-  struct {
-    float r, g, b, a;
-  };
-  float v[4];
-} Vec4;
-typedef Vec4 Color;
+typedef vec4 Color;
 
-typedef struct Shape
-{
+typedef struct Shape {
   float radius;
   int pointCount;
 } Shape;
 
-typedef struct Lifetime
-{
-  uint64_t timeToLive;
-  uint64_t remaininigTimeToLive;
+typedef struct Lifetime {
+  u64 timeToLive;
+  u64 remaininigTimeToLive;
 } Lifetime;
 
-
-enum ActionState 
-{
-  START,
-  STOP
-};
-
-
+enum ActionState { START, STOP };

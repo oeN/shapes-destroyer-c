@@ -1,24 +1,21 @@
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_log.h>
 
+#include "constants.h"
 #include "entity.h"
+#include "game_context.h"
+#include "math.h"
+#include "memory.h"
 #include "systems.h"
 #include "types.h"
-#include "math.h"
-#include "base.h"
-#include "constants.h"
 
-void renderPlayerSystem(EntityManager *em, SDL_Renderer *renderer)
-{
-  Entity *e = getPlayer(em);
-  if (!e) {
-    SDL_Log("there is no player %p", e);
+void renderPlayerSystem(entity_manager *em, SDL_Renderer *renderer) {
+  entity *e = getPlayer(em);
+  if (!e)
     return;
-  }
 
-  if (e->totalComponents <= 0) {
-    /*SDL_Log("there is no components for the player %p", e);*/
+  if (e->totalComponents <= 0)
     return;
-  }
 
   const Position *pos = getComponentValue(em, e, "Position");
   if (!pos)
@@ -39,19 +36,23 @@ void renderPlayerSystem(EntityManager *em, SDL_Renderer *renderer)
   /*SDL_SetRenderDrawColor(renderer, color->r, color->g, color->b, color->a);*/
   SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
   SDL_FRect r = {
-    .x = pos->x,
-    .y = pos->y,
-    .w = 70.0,
-    .h = 70.0,
+      .x = pos->x,
+      .y = pos->y,
+      .w = 70.0,
+      .h = 70.0,
   };
   SDL_RenderRect(renderer, &r);
 }
 
-void renderShapeSystem(EntityManager *em, SDL_Renderer *renderer)
-{
-  for (int i = 0; i < em->totalEntities; ++i)
-  {
-    Entity *e = getEntity(em, i);
+void renderShapeSystem(game_context *gameContext, SDL_Renderer *renderer) {
+  entity_manager *em = getEntityManager(gameContext);
+  int current_position = 0;
+  entity *e = 0;
+
+  while (setEntityByTag(&e, em, ENEMY, current_position)) {
+    // we already set the e variable we can increase the position immediately
+    // and do not forget about it later
+    current_position++;
 
     if (e->totalComponents <= 0)
       continue;
@@ -74,54 +75,53 @@ void renderShapeSystem(EntityManager *em, SDL_Renderer *renderer)
 
     SDL_SetRenderDrawColor(renderer, color->r, color->g, color->b, color->a);
 
-    float unitAngle = 360.0f/shape->pointCount;
+    float unitAngle = 360.0f / shape->pointCount;
 
-    Node *first = SDL_calloc(1, sizeof(Node));
-    Node *point = first;
+    vec2 *points =
+        pushSizeTimes(getFrameArena(gameContext), vec2, shape->pointCount);
+    int pointsIndex = 0;
 
-    // TODO: probably this whole loop can be moved into a function, it could be useful
-    // at least for this game to have a function that given an angle and a center returns
-    // a list of vertices where to draw the lines
-    for (float currentAngle = unitAngle; currentAngle <= 360.0f; currentAngle += unitAngle)
-    {
-      Vec2 *directionVector = SDL_calloc(1, sizeof(Vec2));
-      *directionVector = vec2FromAngle(currentAngle);
-      extendVec2(directionVector, shape->radius);
-      addToVec2(directionVector, pos);
-      point->value = directionVector;
-      // TODO: move the node init to a function? could we use the struct trick with function pointers?
-      point->next = SDL_calloc(1, sizeof(Node));
-      point = point->next;
-    }
+    // TODO: probably this whole loop can be moved into a function, it could
+    // be useful at least for this game to have a function that given an angle
+    // and a center returns a list of vertices where to draw the lines
+    float currentAngle = unitAngle;
+    vec2 *prev = NULL;
 
-    Node *current = first;
-    Node *prev = NULL;
-    while (current->next)
-    {
-      if (prev) {
-        // draw the line
-        Vec2 *lhs = prev->value;
-        Vec2 *rhs = current->value;
-        // TODO: move me to a function
-        SDL_RenderLine(renderer, lhs->x, lhs->y, rhs->x, rhs->y);
+    while (currentAngle <= 360.0f) {
+      points[pointsIndex] = (vec2){};
+      vec2 *current = &points[pointsIndex];
+
+      { // angle vector goes out of scope immediately, find a better way?
+        vec2 angleVector = vec2FromAngle(currentAngle);
+        current->x = angleVector.x;
+        current->y = angleVector.y;
       }
+
+      extendVec2(current, shape->radius);
+      addToVec2(current, pos);
+
+      if (prev) {
+        SDL_RenderLine(renderer, prev->x, prev->y, current->x, current->y);
+      }
+
       prev = current;
-      current = current->next;
+      currentAngle += unitAngle;
+      pointsIndex++;
     }
 
-    Vec2 *lhs = prev->value;
-    Vec2 *rhs = first->value;
+    vec2 *lhs = prev;
+    vec2 *rhs = &points[0];
 
     SDL_RenderLine(renderer, lhs->x, lhs->y, rhs->x, rhs->y);
-    freeList(first);
   }
 }
 
-void moveSystem(EntityManager *em)
-{
-  for (int i = 0; i < em->totalEntities; ++i)
-  {
-    Entity *e = getEntity(em, i);
+void moveSystem(entity_manager *em) {
+  int current_position = 0;
+  entity *e = 0;
+
+  while (setEntityByTag(&e, em, ENEMY, current_position)) {
+    current_position++;
 
     if (e->totalComponents <= 0)
       continue;
@@ -139,16 +139,12 @@ void moveSystem(EntityManager *em)
   }
 }
 
-
-void keepInBoundsSystem(EntityManager *em)
-{
-  for (int i = 0; i < em->totalEntities; ++i)
-  {
-    Entity *e = getEntity(em, i);
+void keepInBoundsSystem(entity_manager *em) {
+  for (int i = 0; i < em->totalEntities; ++i) {
+    entity *e = getEntity(em, i);
 
     if (e->totalComponents <= 0)
       continue;
-
 
     Position *pos = getComponentValue(em, e, "Position");
     if (!pos)
@@ -166,12 +162,12 @@ void keepInBoundsSystem(EntityManager *em)
   }
 }
 
-void handlePlayerInput(EntityManager *em)
-{
-  Entity *player = getPlayer(em);
-  if (!player) return;
+void handlePlayerInput(entity_manager *em) {
+  entity *player = getPlayer(em);
+  if (!player)
+    return;
 
-  Action *action = getComponentValue(em, player, "Action");
+  action *action = getComponentValue(em, player, "Action");
 
   // TODO: code to perform the action
 

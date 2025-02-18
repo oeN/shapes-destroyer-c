@@ -6,5 +6,5 @@
 unsigned long hash(unsigned char *str);
 void increaseArray(void **array, size_t elementSize, int *currentSize);
 int randomClamped(int min, int max);
-void freeList(Node *node);
+void freeList(node *node);
 int arraySize(void *array);
