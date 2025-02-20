@@ -4,12 +4,22 @@
 #include "constants.h"
 #include "entity.h"
 #include "game_context.h"
-#include "math.h"
 #include "memory.h"
+#include "mymath.h"
 #include "systems.h"
 #include "types.h"
 
-void renderPlayerSystem(entity_manager *em, SDL_Renderer *renderer) {
+void renderPlayerSystem(system_params *params) {
+  if (!params->renderer)
+    return;
+  if (!params->gameContext)
+    return;
+  if (!params->gameContext->entityManager)
+    return;
+
+  entity_manager *em = params->gameContext->entityManager;
+  SDL_Renderer *renderer = params->renderer;
+
   entity *e = getPlayer(em);
   if (!e)
     return;
@@ -44,7 +54,15 @@ void renderPlayerSystem(entity_manager *em, SDL_Renderer *renderer) {
   SDL_RenderRect(renderer, &r);
 }
 
-void renderShapeSystem(game_context *gameContext, SDL_Renderer *renderer) {
+void renderShapeSystem(system_params *params) {
+  if (!params->gameContext)
+    return;
+  if (!params->renderer)
+    return;
+
+  game_context *gameContext = params->gameContext;
+  SDL_Renderer *renderer = params->renderer;
+
   entity_manager *em = getEntityManager(gameContext);
   int current_position = 0;
   entity *e = 0;
@@ -116,7 +134,13 @@ void renderShapeSystem(game_context *gameContext, SDL_Renderer *renderer) {
   }
 }
 
-void moveSystem(entity_manager *em) {
+void moveSystem(system_params *params) {
+  if (!params->gameContext)
+    return;
+  if (!params->gameContext->entityManager)
+    return;
+
+  entity_manager *em = params->gameContext->entityManager;
   int current_position = 0;
   entity *e = 0;
 
@@ -139,7 +163,14 @@ void moveSystem(entity_manager *em) {
   }
 }
 
-void keepInBoundsSystem(entity_manager *em) {
+void keepInBoundsSystem(system_params *params) {
+  if (!params->gameContext)
+    return;
+
+  entity_manager *em = getEntityManager(params->gameContext);
+  if (!em)
+    return;
+
   for (int i = 0; i < em->totalEntities; ++i) {
     entity *e = getEntity(em, i);
 
@@ -162,7 +193,17 @@ void keepInBoundsSystem(entity_manager *em) {
   }
 }
 
-void handlePlayerInput(linked_list_node *actionQueue, entity_manager *em) {
+void handlePlayerInput(system_params *params) {
+  if (!params->gameContext)
+    return;
+  if (!params->gameContext->entityManager)
+    return;
+  if (!params->currentScene)
+    return;
+
+  entity_manager *em = params->gameContext->entityManager;
+  linked_list_node *actionQueue = params->currentScene->actionsQueue;
+
   entity *player = getPlayer(em);
   if (!player)
     return;

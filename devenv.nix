@@ -3,11 +3,10 @@ let
 frameworks = pkgs.darwin.apple_sdk.frameworks;
 in 
 {
-  # packages = with pkgs; [ 
-  #   cmake
-  #   lldb
-  #   frameworks.Kernel
-  # ];
+  packages = with pkgs; [ 
+    meson
+    ninja
+  ];
 
-  # languages.c.enable = true;
+  languages.python.enable = true;
 }

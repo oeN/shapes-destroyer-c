@@ -1,5 +1,6 @@
-#include "math.h"
 #include <math.h>
+
+#include "mymath.h"
 
 vec2 vec2Splat(float value) { return (vec2){value}; }
 

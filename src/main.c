@@ -12,27 +12,15 @@
 #include "constants.h"
 #include "entity.h"
 #include "game_context.h"
+#include "game_engine.h"
 #include "memory.h"
 #include "systems.h"
 #include "types.h"
 
-typedef struct ActionMap {
-  SDL_Keycode keycode;
-  uint8 action;
-} action_map;
-
-struct Scene {
-  u8 id;
-  char *name;
-  linked_list_node *actionsQueue;
-  action_map *actionMap;
-};
-
 typedef struct AppState {
   SDL_Window *window;
   SDL_Renderer *renderer;
-  game_context *gameContext;
-  memory_arena *gameArena;
+  game_engine *gameEngine;
   u64 lastStep;
 } AppState;
 
@@ -67,33 +55,44 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     return SDL_APP_FAILURE;
   *appstate = as;
 
-  as->gameArena = SDL_calloc(1, sizeof(memory_arena));
-  if (!as->gameArena)
+  as->gameEngine = initGameEngine(Megabytes(10));
+  if (!as->gameEngine->mainArena)
     return SDL_APP_FAILURE;
-  // this seems so wrong!
-  initArena(as->gameArena, Megabytes(10));
-
-  scene *gameScene = pushStruct(as->gameArena, scene);
-  gameScene->id = 0;
-  gameScene->name = pushString(as->gameArena, "Game Scene");
-  gameScene->actionMap = defaultActions;
-  gameScene->actionsQueue = pushStruct(as->gameArena, linked_list_node);
-
-  // FIXME: this is a mess, at least I don't like it
-  as->gameContext = initGameContext(as->gameArena);
-  setCurrentScene(as->gameContext, gameScene);
-  entity_manager *entityManager = getEntityManager(as->gameContext);
-  as->lastStep = SDL_GetTicks();
-
-  // spawn a single entity
-  for (int i = 0; i < 3; i++) {
-    spawnEntity(entityManager, true);
-  }
 
   if (!SDL_CreateWindowAndRenderer("shapes-destroyer", SCREEN_WIDTH,
                                    SCREEN_HEIGHT, 0, &as->window,
                                    &as->renderer))
     return SDL_APP_FAILURE;
+
+  game_engine *gameEngine = as->gameEngine;
+  memory_arena *mainArena = gameEngine->mainArena;
+  game_context *gameContext = gameEngine->gameContext;
+
+  scene *gameScene = pushStruct(mainArena, scene);
+  gameScene->id = 0;
+  gameScene->name = pushString(mainArena, "Game Scene");
+  gameScene->actionMap = defaultActions;
+  gameScene->actionsQueue = pushStruct(mainArena, linked_list_node);
+  setCurrentScene(gameContext, gameScene);
+
+  entity_manager *entityManager = getEntityManager(gameContext);
+  as->lastStep = SDL_GetTicks();
+
+  /*// spawn a single entity*/
+  /*for (int i = 0; i < 3; i++) {*/
+  /*  spawnEntity(entityManager, true);*/
+  /*}*/
+
+  // INPUT
+  // handlePlayerInput(linked_list_node *actionQueue, entity_manager *em)
+
+  // UPDATE
+  gameEngine->addSystem(gameEngine, UPDATE, moveSystem);
+  // keepInBoundsSystem(em);
+
+  // RENDER
+  // renderPlayerSystem(em, as->renderer);
+  // renderShapeSystem(as->gameEngine->gameContext, as->renderer);
 
   return SDL_APP_CONTINUE;
 }
@@ -124,12 +123,12 @@ SDL_AppResult handle_key_event(AppState *as, SDL_Event *event) {
   case SDL_SCANCODE_ESCAPE:
     return SDL_APP_SUCCESS;
   default: {
-    scene *currentScene = getCurrentScene(as->gameContext);
+    scene *currentScene = getCurrentScene(as->gameEngine->gameContext);
     action_kind actionKind = findAction(currentScene, event->key.scancode);
     if (actionKind == ACTION_NONE)
       break;
 
-    entity_manager *em = getEntityManager(as->gameContext);
+    entity_manager *em = getEntityManager(as->gameEngine->gameContext);
     action *foundAction = pushStruct(em->gameArena, action);
     foundAction->kind = actionKind;
     foundAction->state = actionStateFromEventType(event->type);
@@ -159,26 +158,24 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 SDL_AppResult SDL_AppIterate(void *appstate) {
   AppState *as = (AppState *)appstate;
   const Uint64 now = SDL_GetTicks();
-  memory_arena *frameArena = getFrameArena(as->gameContext);
-  entity_manager *em = getEntityManager(as->gameContext);
-  scene *currentScene = getCurrentScene(as->gameContext);
-  if (frameArena->used > 0)
-    freeArena(frameArena);
-  initArena(frameArena, Kilobytes(500));
+  // TODO: move all of this into the game_engine.c this file doesn't need to
+  // know about the frameArena
+  memory_arena *frameArena = getFrameArena(as->gameEngine->gameContext);
+  entity_manager *em = getEntityManager(as->gameEngine->gameContext);
+  scene *currentScene = getCurrentScene(as->gameEngine->gameContext);
+  resetArena(frameArena);
 
-  handlePlayerInput(currentScene->actionsQueue, em);
+  // as->gameEngine->input(as->gameEngine);
 
   while ((now - as->lastStep) >= STEP_RATE_IN_MILLISECONDS) {
-    moveSystem(em);
-    keepInBoundsSystem(em);
+    // as->gameEngine->update(as->gameEngine);
     as->lastStep += STEP_RATE_IN_MILLISECONDS;
   }
 
   SDL_SetRenderDrawColor(as->renderer, 0, 0, 0, 255);
   SDL_RenderClear(as->renderer);
 
-  renderPlayerSystem(em, as->renderer);
-  renderShapeSystem(as->gameContext, as->renderer);
+  // as->gameEngine->render(as->gameEngine);
 
   SDL_RenderPresent(as->renderer);
 
@@ -188,16 +185,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
   if (appstate != NULL) {
     AppState *as = (AppState *)appstate;
-    // SDL should take care of this
-    // SDL_DestroyRenderer(as->renderer);
-    // SDL_DestroyWindow(as->window);
 
-    memory_arena *frameArena = getFrameArena(as->gameContext);
-    if (frameArena->used > 0)
-      freeArena(frameArena);
-
-    freeArena(as->gameArena);
-    SDL_free(as->gameArena);
+    as->gameEngine->destroy(as->gameEngine);
     SDL_free(as);
   }
 }

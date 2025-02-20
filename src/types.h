@@ -30,6 +30,18 @@ typedef struct Action {
   action_state state;
 } action;
 
+typedef struct ActionMap {
+  SDL_Keycode keycode;
+  uint8 action;
+} action_map;
+
+struct Scene {
+  u8 id;
+  char *name;
+  linked_list_node *actionsQueue;
+  action_map *actionMap;
+};
+
 typedef union Vec2 {
   struct {
     float x, y;

@@ -14,6 +14,12 @@ void debugArena(memory_arena *arena) {
   printf("\n----------\n");
 }
 
+memory_arena *bootstrapArena(memory_size totalSize) {
+  memory_arena *arena = malloc(sizeof(memory_arena));
+  initArena(arena, totalSize);
+  return arena;
+}
+
 void initArena(memory_arena *arena, memory_size totalSize) {
   arena->startAddress = malloc(totalSize);
   arena->totalSize = totalSize;
@@ -22,7 +28,15 @@ void initArena(memory_arena *arena, memory_size totalSize) {
   debugArena(arena);
 }
 
-void freeArena(memory_arena *arena) { free(arena->startAddress); }
+void resetArena(memory_arena *arena) {
+  arena->used = 0;
+  memset(arena->startAddress, 0, arena->totalSize);
+}
+
+void freeArena(memory_arena *arena) {
+  free(arena->startAddress);
+  free(arena);
+}
 
 void pushToLinkedList(memory_arena *arena, linked_list_node **firstOrCurrent,
                       linked_list_node *next) {

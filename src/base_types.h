@@ -15,3 +15,9 @@ typedef uint32 u32;
 typedef uint64 u64;
 
 typedef size_t memory_size;
+
+typedef struct Node linked_list_node;
+struct Node {
+  linked_list_node *next;
+  void *value;
+};

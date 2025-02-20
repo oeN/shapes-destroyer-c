@@ -24,8 +24,10 @@ Component *addComponent(entity_manager *em, entity *entity,
                         component_name componentName, void *value) {
   int entityId = entity->id;
 
-  em->components[entityId][entity->totalComponents] =
-      (Component){.hash = hash(componentName), .value = value};
+  em->components[entityId][entity->totalComponents] = (Component){
+      .hash = hash(componentName), //
+      .value = value               //
+  };
   Component *c = &(em->components[entityId][entity->totalComponents]);
 
   entity->totalComponents++;

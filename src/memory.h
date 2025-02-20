@@ -4,12 +4,6 @@
 
 #include "base_types.h"
 
-typedef struct Node linked_list_node;
-struct Node {
-  linked_list_node *next;
-  void *value;
-};
-
 typedef struct MemoryArena {
   memory_size totalSize;
   memory_size used;
@@ -26,8 +20,10 @@ typedef struct MemoryArena {
   (type *)_pushSize(Arena, sizeof(type) * times)
 #define getNodeValue(Node, type) (type *)_getNodeValue(Node)
 
+memory_arena *bootstrapArena(memory_size totalSize);
 void initArena(memory_arena *arena, memory_size totalSize);
 void freeArena(memory_arena *arena);
+void resetArena(memory_arena *arena);
 
 void pushToLinkedList(memory_arena *arena, linked_list_node **firstOrCurrent,
                       linked_list_node *next);
