@@ -55,7 +55,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     return SDL_APP_FAILURE;
   *appstate = as;
 
-  as->gameEngine = initGameEngine(Megabytes(10));
+  as->gameEngine = bootstrapGameEngine(Megabytes(10));
   if (!as->gameEngine->mainArena)
     return SDL_APP_FAILURE;
 
@@ -63,6 +63,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
                                    SCREEN_HEIGHT, 0, &as->window,
                                    &as->renderer))
     return SDL_APP_FAILURE;
+
+  // FIXME: this should not be done! (it's temporary)
+  as->gameEngine->renderer = as->renderer;
 
   game_engine *gameEngine = as->gameEngine;
   memory_arena *mainArena = gameEngine->mainArena;
@@ -78,21 +81,22 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
   entity_manager *entityManager = getEntityManager(gameContext);
   as->lastStep = SDL_GetTicks();
 
-  /*// spawn a single entity*/
-  /*for (int i = 0; i < 3; i++) {*/
-  /*  spawnEntity(entityManager, true);*/
-  /*}*/
+  // INIT
+  gameEngine->addSystem(gameEngine, GAME_ENGINE_INIT, spawnEntities);
 
   // INPUT
-  // handlePlayerInput(linked_list_node *actionQueue, entity_manager *em)
+  gameEngine->addSystem(gameEngine, GAME_ENGINE_INPUT, handlePlayerInput);
 
   // UPDATE
-  gameEngine->addSystem(gameEngine, UPDATE, moveSystem);
-  // keepInBoundsSystem(em);
+  gameEngine->addSystem(gameEngine, GAME_ENGINE_UPDATE, moveSystem);
+  gameEngine->addSystem(gameEngine, GAME_ENGINE_UPDATE, keepInBoundsSystem);
 
   // RENDER
-  // renderPlayerSystem(em, as->renderer);
-  // renderShapeSystem(as->gameEngine->gameContext, as->renderer);
+  gameEngine->addSystem(gameEngine, GAME_ENGINE_RENDER, renderShapeSystem);
+  gameEngine->addSystem(gameEngine, GAME_ENGINE_RENDER, renderPlayerSystem);
+
+  // the init is only called once
+  gameEngine->init(gameEngine);
 
   return SDL_APP_CONTINUE;
 }
@@ -158,26 +162,25 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 SDL_AppResult SDL_AppIterate(void *appstate) {
   AppState *as = (AppState *)appstate;
   const Uint64 now = SDL_GetTicks();
-  // TODO: move all of this into the game_engine.c this file doesn't need to
-  // know about the frameArena
-  memory_arena *frameArena = getFrameArena(as->gameEngine->gameContext);
-  entity_manager *em = getEntityManager(as->gameEngine->gameContext);
-  scene *currentScene = getCurrentScene(as->gameEngine->gameContext);
-  resetArena(frameArena);
 
+  // FIXME: all this iterate should be the other way around the game engine
+  // should be the main part and SDL just a service for it
+  as->gameEngine->preFrame(as->gameEngine);
   // as->gameEngine->input(as->gameEngine);
 
   while ((now - as->lastStep) >= STEP_RATE_IN_MILLISECONDS) {
-    // as->gameEngine->update(as->gameEngine);
+    as->gameEngine->update(as->gameEngine);
     as->lastStep += STEP_RATE_IN_MILLISECONDS;
   }
 
   SDL_SetRenderDrawColor(as->renderer, 0, 0, 0, 255);
   SDL_RenderClear(as->renderer);
 
-  // as->gameEngine->render(as->gameEngine);
+  as->gameEngine->render(as->gameEngine);
 
   SDL_RenderPresent(as->renderer);
+
+  as->gameEngine->postFrame(as->gameEngine);
 
   return SDL_APP_CONTINUE;
 }

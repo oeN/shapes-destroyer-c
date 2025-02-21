@@ -28,9 +28,10 @@ void initArena(memory_arena *arena, memory_size totalSize) {
   debugArena(arena);
 }
 
-void resetArena(memory_arena *arena) {
+void resetArena(memory_arena *arena, bool zeroIt) {
   arena->used = 0;
-  memset(arena->startAddress, 0, arena->totalSize);
+  if (zeroIt)
+    memset(arena->startAddress, 0, arena->totalSize);
 }
 
 void freeArena(memory_arena *arena) {

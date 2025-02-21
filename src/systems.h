@@ -12,6 +12,7 @@ typedef struct SystemParams {
   SDL_Renderer *renderer;
   // it holds the current actionQueue for the player input
   scene *currentScene;
+  memory_arena *tempArena;
 } system_params;
 
 typedef void (*system_callback)(system_params *);
@@ -19,6 +20,8 @@ typedef struct System {
   u8 gameLoopStage; // when the system must be called
   system_callback callback;
 } system_t;
+
+void spawnEntities(system_params *params);
 
 void moveSystem(system_params *params);
 void renderPlayerSystem(system_params *params);

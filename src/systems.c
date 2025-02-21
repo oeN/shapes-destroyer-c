@@ -9,6 +9,19 @@
 #include "systems.h"
 #include "types.h"
 
+void spawnEntities(system_params *params) {
+  if (!params->gameContext->entityManager)
+    return;
+
+  entity_manager *em = params->gameContext->entityManager;
+
+  // for now the first entity is always the player and the other are all "ENEMY"
+  // even if the currently do nothing
+  for (int i = 0; i < 30; i++) {
+    spawnEntity(em, true);
+  }
+}
+
 void renderPlayerSystem(system_params *params) {
   if (!params->renderer)
     return;
@@ -27,7 +40,7 @@ void renderPlayerSystem(system_params *params) {
   if (e->totalComponents <= 0)
     return;
 
-  const Position *pos = getComponentValue(em, e, "Position");
+  const Position *pos = getComponentValue(em, e, (component_name) "Position");
   if (!pos)
     return;
 
@@ -58,6 +71,8 @@ void renderShapeSystem(system_params *params) {
   if (!params->gameContext)
     return;
   if (!params->renderer)
+    return;
+  if (!params->tempArena)
     return;
 
   game_context *gameContext = params->gameContext;
@@ -91,12 +106,13 @@ void renderShapeSystem(system_params *params) {
     if (!color)
       continue;
 
+    // FIXME: all the SDL related function should be moved outside the game
+    // "logic"
     SDL_SetRenderDrawColor(renderer, color->r, color->g, color->b, color->a);
 
     float unitAngle = 360.0f / shape->pointCount;
 
-    vec2 *points =
-        pushSizeTimes(getFrameArena(gameContext), vec2, shape->pointCount);
+    vec2 *points = pushSizeTimes(params->tempArena, vec2, shape->pointCount);
     int pointsIndex = 0;
 
     // TODO: probably this whole loop can be moved into a function, it could
@@ -137,6 +153,7 @@ void renderShapeSystem(system_params *params) {
 void moveSystem(system_params *params) {
   if (!params->gameContext)
     return;
+
   if (!params->gameContext->entityManager)
     return;
 

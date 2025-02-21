@@ -23,7 +23,7 @@ typedef struct MemoryArena {
 memory_arena *bootstrapArena(memory_size totalSize);
 void initArena(memory_arena *arena, memory_size totalSize);
 void freeArena(memory_arena *arena);
-void resetArena(memory_arena *arena);
+void resetArena(memory_arena *arena, bool zeroIt);
 
 void pushToLinkedList(memory_arena *arena, linked_list_node **firstOrCurrent,
                       linked_list_node *next);

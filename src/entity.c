@@ -70,20 +70,8 @@ Component *findComponent(entity_manager *em, entity *entity,
 
 void *getComponentValue(entity_manager *em, entity *entity,
                         component_name componentName) {
-  int entityId = entity->id;
 
-  unsigned long hashedName = hash(componentName);
-  Component *foundComponent = NULL;
-
-  // TODO: improve me, it currently perform just a linear search
-  for (int i = 0; i < entity->totalComponents; ++i) {
-    Component *c = &em->components[entityId][i];
-    if (c->hash == hashedName) {
-      foundComponent = c;
-      break;
-    }
-  }
-
+  Component *foundComponent = findComponent(em, entity, componentName);
   if (!foundComponent)
     return NULL;
 
@@ -91,13 +79,9 @@ void *getComponentValue(entity_manager *em, entity *entity,
 }
 
 entity *getEntity(entity_manager *entityManager, int entityId) {
-  // printf("getEntity: retrieving ID %d - current entities %d\n", entityId,
-  //       entityManager->totalEntities);
   if (!(entityId < entityManager->totalEntities))
     return NULL;
 
-  // printf("getEntity: returning ID %d - address %p\n", entityId,
-  //       &entityManager->entities[entityId]);
   return &entityManager->entities[entityId];
 }
 
@@ -106,7 +90,8 @@ void addTaggedEntity(entity_manager *entityManager, u32 entityId, u8 tag) {
     return;
   entities_by_tag *tagContainer = &(entityManager->entitiesByTag[tag]);
   if (!tagContainer)
-    SDL_Log("THERE IS NO TAG CONTAINER");
+    return;
+
   tagContainer->entityIds[tagContainer->count] = entityId;
   tagContainer->count++;
 }

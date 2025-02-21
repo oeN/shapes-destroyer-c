@@ -3,6 +3,12 @@
 #include "components.h"
 #include "memory.h"
 
+// FIXME: find a way to use the memory_arena and have dynamically sized arrays
+// theese variables should not exists at all, saved maybe the TAG one
+#define MAX_ENTITIES 512
+#define MAX_ENTITY_TAGS 10
+#define MAX_COMPONENTS_PER_ENTITY 20
+
 typedef struct Entity {
   int id;
   int totalComponents;
@@ -18,26 +24,23 @@ typedef enum EntityTag { //
 
 typedef struct EntitiesByTag {
   u16 count;
-  u32 entityIds[512];
+  u32 entityIds[MAX_ENTITIES];
 } entities_by_tag;
 
 typedef struct EntityManager entity_manager, *entity_manager_ptr;
-// FIXME: find a way to use the memory_arena and have dynamically sized arrays
 struct EntityManager {
   int totalEntities;
-  // array of Entities, max 512 entities
-  entity entities[512];
+  entity entities[MAX_ENTITIES];
   // just for convenience and test it out keep the pointer of the
   // game arena also here
   memory_arena *gameArena;
 
   // an array of entities_by_tag where the key is the EntityTag
-  entities_by_tag entitiesByTag[10];
+  entities_by_tag entitiesByTag[MAX_ENTITY_TAGS];
 
   // array of array of Component
   // the index of the first array is the entity id
-  // for now each entity can have 512 components
-  Component components[512][10];
+  Component components[MAX_ENTITIES][MAX_COMPONENTS_PER_ENTITY];
 };
 
 typedef unsigned char *component_name;
