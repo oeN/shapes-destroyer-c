@@ -112,7 +112,8 @@ void renderShapeSystem(system_params *params) {
 
     float unitAngle = 360.0f / shape->pointCount;
 
-    vec2 *points = pushSizeTimes(params->tempArena, vec2, shape->pointCount);
+    vec2 *points =
+        pushSizeTimes(params->tempArena, vec2, shape->pointCount + 1);
     int pointsIndex = 0;
 
     // TODO: probably this whole loop can be moved into a function, it could
@@ -134,19 +135,22 @@ void renderShapeSystem(system_params *params) {
       extendVec2(current, shape->radius);
       addToVec2(current, pos);
 
-      if (prev) {
-        SDL_RenderLine(renderer, prev->x, prev->y, current->x, current->y);
-      }
+      /*if (prev) {*/
+      /*  SDL_RenderLine(renderer, prev->x, prev->y, current->x, current->y);*/
+      /*}*/
 
       prev = current;
       currentAngle += unitAngle;
       pointsIndex++;
     }
+    points[pointsIndex] = points[0];
 
-    vec2 *lhs = prev;
-    vec2 *rhs = &points[0];
+    SDL_RenderLines(renderer, (SDL_FPoint *)points, shape->pointCount + 1);
 
-    SDL_RenderLine(renderer, lhs->x, lhs->y, rhs->x, rhs->y);
+    /*vec2 *lhs = prev;*/
+    /*vec2 *rhs = &points[0];*/
+    /**/
+    /*SDL_RenderLine(renderer, lhs->x, lhs->y, rhs->x, rhs->y);*/
   }
 }
 
