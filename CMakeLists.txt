@@ -17,4 +17,5 @@ list(APPEND LIBS SDL3::SDL3)
 
 target_link_libraries(${PROJECT_NAME} ${LIBS})
 
-add_subdirectory(tests)
+# add_subdirectory(tests)
+

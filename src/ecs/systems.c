@@ -1,19 +1,22 @@
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_log.h>
 
-#include "constants.h"
-#include "entity.h"
-#include "game_context.h"
-#include "memory.h"
-#include "mymath.h"
 #include "systems.h"
-#include "types.h"
+#include "../constants.h"
+#include "../mymath.h"
+#include "../types.h"
+#include "entity.h"
+#include "memory.h"
+
+// NOTE: do we really want to use guard clause in the systems?
+// I want them to break if I'm not passing something to it, if needed we can
+// implement the checks later on
 
 void spawnEntities(system_params *params) {
-  if (!params->gameContext->entityManager)
+#if SYSTEM_GUARDS
+  if (!params->entityManager)
     return;
+#endif
 
-  entity_manager *em = params->gameContext->entityManager;
+  entity_manager *em = params->entityManager;
 
   // for now the first entity is always the player and the other are all "ENEMY"
   // even if the currently do nothing
@@ -22,16 +25,40 @@ void spawnEntities(system_params *params) {
   }
 }
 
-void renderPlayerSystem(system_params *params) {
-  if (!params->renderer)
-    return;
-  if (!params->gameContext)
-    return;
-  if (!params->gameContext->entityManager)
-    return;
+void renderWeirdGradient(system_params *params) {
+  game_offscreen_buffer *Buffer = params->backBuffer;
 
-  entity_manager *em = params->gameContext->entityManager;
-  SDL_Renderer *renderer = params->renderer;
+  uint16 BlueOffset = 128;
+  uint16 GreenOffset = 128;
+
+  uint8 *Row = (uint8 *)Buffer->memory;
+  for (int Y = 0; Y < Buffer->height; ++Y) {
+    uint32 *Pixel = (uint32 *)Row;
+    for (int X = 0; X < Buffer->width; ++X) {
+      uint8 Blue = (X + BlueOffset);
+      uint8 Green = (Y + GreenOffset);
+      /*uint8 Blue = 0;*/
+      /*uint8 Green = 0;*/
+      uint8 Red = 0;
+      uint8 Alpha = 255;
+
+      *Pixel++ = ((Alpha << 24) | ((Red << 16) | ((Green << 8) | Blue)));
+    }
+
+    Row += Buffer->pitch;
+  }
+}
+
+void renderPlayerSystem(system_params *params) {
+#if SYSTEM_GUARDS
+  if (!params->backBuffer)
+    return;
+  if (!params->entityManager)
+    return;
+#endif
+
+  entity_manager *em = params->entityManager;
+  game_offscreen_buffer *backBuffer = params->backBuffer;
 
   entity *e = getPlayer(em);
   if (!e)
@@ -56,29 +83,23 @@ void renderPlayerSystem(system_params *params) {
   if (!color)
     return;
 
-  /*SDL_SetRenderDrawColor(renderer, color->r, color->g, color->b, color->a);*/
-  SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-  SDL_FRect r = {
-      .x = pos->x,
-      .y = pos->y,
-      .w = 70.0,
-      .h = 70.0,
-  };
-  SDL_RenderRect(renderer, &r);
+  // TODO: render the player as a red rectangle by manually setting the pixel
+  // data for it
 }
 
 void renderShapeSystem(system_params *params) {
-  if (!params->gameContext)
-    return;
-  if (!params->renderer)
+#if SYSTEM_GUARDS
+  if (!params->backBuffer)
     return;
   if (!params->tempArena)
     return;
+  if (!params->entityManager)
+    return;
+#endif
 
-  game_context *gameContext = params->gameContext;
-  SDL_Renderer *renderer = params->renderer;
+  game_offscreen_buffer *backBuffer = params->backBuffer;
 
-  entity_manager *em = getEntityManager(gameContext);
+  entity_manager *em = params->entityManager;
   int current_position = 0;
   entity *e = 0;
 
@@ -106,10 +127,6 @@ void renderShapeSystem(system_params *params) {
     if (!color)
       continue;
 
-    // FIXME: all the SDL related function should be moved outside the game
-    // "logic"
-    SDL_SetRenderDrawColor(renderer, color->r, color->g, color->b, color->a);
-
     float unitAngle = 360.0f / shape->pointCount;
 
     vec2 *points =
@@ -135,33 +152,24 @@ void renderShapeSystem(system_params *params) {
       extendVec2(current, shape->radius);
       addToVec2(current, pos);
 
-      /*if (prev) {*/
-      /*  SDL_RenderLine(renderer, prev->x, prev->y, current->x, current->y);*/
-      /*}*/
-
       prev = current;
       currentAngle += unitAngle;
       pointsIndex++;
     }
     points[pointsIndex] = points[0];
 
-    SDL_RenderLines(renderer, (SDL_FPoint *)points, shape->pointCount + 1);
-
-    /*vec2 *lhs = prev;*/
-    /*vec2 *rhs = &points[0];*/
-    /**/
-    /*SDL_RenderLine(renderer, lhs->x, lhs->y, rhs->x, rhs->y);*/
+    // TODO: render the lines with the righ color by setting the pixels in the
+    // back buffer backBuffer
   }
 }
 
 void moveSystem(system_params *params) {
-  if (!params->gameContext)
+#if SYSTEM_GUARDS
+  if (!params->entityManager)
     return;
+#endif
 
-  if (!params->gameContext->entityManager)
-    return;
-
-  entity_manager *em = params->gameContext->entityManager;
+  entity_manager *em = params->entityManager;
   int current_position = 0;
   entity *e = 0;
 
@@ -185,10 +193,12 @@ void moveSystem(system_params *params) {
 }
 
 void keepInBoundsSystem(system_params *params) {
-  if (!params->gameContext)
+#if SYSTEM_GUARDS
+  if (!params->entityManger)
     return;
+#endif
 
-  entity_manager *em = getEntityManager(params->gameContext);
+  entity_manager *em = params->entityManager;
   if (!em)
     return;
 
@@ -215,21 +225,15 @@ void keepInBoundsSystem(system_params *params) {
 }
 
 void handlePlayerInput(system_params *params) {
-  if (!params->gameContext)
+#if SYSTEM_GUARDS
+  if (!params->entityManager)
     return;
-  if (!params->gameContext->entityManager)
-    return;
-  if (!params->currentScene)
-    return;
+#endif
 
-  entity_manager *em = params->gameContext->entityManager;
-  linked_list_node *actionQueue = params->currentScene->actionsQueue;
+  entity_manager *em = params->entityManager;
 
   entity *player = getPlayer(em);
   if (!player)
-    return;
-
-  if (!actionQueue)
     return;
 
   Velocity *vel = getComponentValue(em, player, "Velocity");
@@ -238,15 +242,10 @@ void handlePlayerInput(system_params *params) {
 
   float acceleration = 5.0;
 
-  // for now I'll reset the velocity
-  // vel->x = 0.0;
-  // vel->y = 0.0;
-
   u32 count = 0;
-  linked_list_node *current = popFromLinkedList(actionQueue);
-  // TODO: handle the first action itself
-  // actually we cannot handle actions from the bottom, we've to handle them
-  // from the start and remove the value as we go or "Pop from the front"
+  // TODO: loop through the Action entities and apply only the one that belongs
+  // to the current player
+#if 0
   while (current) {
     if (!current->value)
       continue;
@@ -292,4 +291,5 @@ void handlePlayerInput(system_params *params) {
 
     current = popFromLinkedList(actionQueue);
   }
+#endif
 }

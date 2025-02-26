@@ -1,7 +1,6 @@
 #include <stdio.h>
 
-#include "game_context.h"
-#include "game_engine.h"
+#include "./game_engine.h"
 #include "memory.h"
 
 void printDebugInfo(game_engine *gameEngine) {
@@ -13,18 +12,17 @@ void printDebugInfo(game_engine *gameEngine) {
   printf("------ END UPDATE -----\n");
 }
 
-void _preFrame(game_engine *self) {
+void GameEngine_preFrame(game_engine *self) {
   frame_context *ctx = self->frameContext;
   resetArena(ctx->frameArena, false);
 
   ctx->systemParams = pushStruct(ctx->frameArena, system_params);
-  ctx->systemParams->gameContext = self->gameContext;
-  ctx->systemParams->renderer = self->renderer;
-  ctx->systemParams->currentScene = getCurrentScene(self->gameContext);
+  ctx->systemParams->entityManager = self->entityManager;
+  ctx->systemParams->backBuffer = self->backBuffer;
   ctx->systemParams->tempArena = ctx->frameArena;
 }
 
-void _postFrame(game_engine *self) {}
+void GameEngine_postFrame(game_engine *self) {}
 
 void loopThroughSystems(game_engine *self, game_loop_stage stage) {
   for (int i = 0; i < self->systemsCount; i++) {
@@ -37,7 +35,22 @@ void loopThroughSystems(game_engine *self, game_loop_stage stage) {
   }
 }
 
-void _init(game_engine *self) {
+void GameEngine_init(game_engine *self) {
+  // INIT
+  /*GameEngine_addSystem(self, GAME_ENGINE_INIT, spawnEntities);*/
+  /**/
+  /*// INPUT*/
+  /*GameEngine_addSystem(self, GAME_ENGINE_INPUT, handlePlayerInput);*/
+  /**/
+  /*// UPDATE*/
+  /*GameEngine_addSystem(self, GAME_ENGINE_UPDATE, moveSystem);*/
+  /*GameEngine_addSystem(self, GAME_ENGINE_UPDATE, keepInBoundsSystem);*/
+
+  // RENDER
+  GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderWeirdGradient);
+  /*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderShapeSystem);*/
+  /*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderPlayerSystem);*/
+
   // this function is only called once but I don't like to trick the pre and
   // post frame in theory I need this only for the system params but if some
   // other system will need a temporary memory to do things is good to call them
@@ -45,21 +58,21 @@ void _init(game_engine *self) {
   //
   // FIXME: later when you're almost done with the project check if there is a
   // better way to handle this
-  _preFrame(self);
+  GameEngine_preFrame(self);
   loopThroughSystems(self, GAME_ENGINE_INIT);
-  _postFrame(self);
+  GameEngine_postFrame(self);
 }
 
-void _update(game_engine *self) {
+void GameEngine_update(game_engine *self) {
   loopThroughSystems(self, GAME_ENGINE_INPUT);
   loopThroughSystems(self, GAME_ENGINE_UPDATE);
 }
 
-void _render(game_engine *self) {
+void GameEngine_render(game_engine *self) {
   loopThroughSystems(self, GAME_ENGINE_RENDER);
 }
 
-void _destroy(game_engine *self) {
+void GameEngine_destroy(game_engine *self) {
   // even if the frame arena is inside the frameContext that it's inside the
   // game engine struct itself we've bootstrapped a diffeerent arena for the
   // frameContext and we've to free it
@@ -68,8 +81,8 @@ void _destroy(game_engine *self) {
   freeArena(self->mainArena);
 }
 
-int _addSystem(game_engine *self, game_loop_stage stage,
-               system_callback systemCallback) {
+int GameEngine_addSystem(game_engine *self, game_loop_stage stage,
+                         system_callback systemCallback) {
   if (!self->systems)
     return 0;
 
@@ -86,16 +99,14 @@ game_engine *bootstrapGameEngine(memory_size mainArenaSize) {
 
   game_engine *gameEngine = pushStruct(mainArena, game_engine);
   gameEngine->mainArena = mainArena;
-  gameEngine->gameContext = initGameContext(mainArena);
+  gameEngine->backBuffer = pushStruct(mainArena, game_offscreen_buffer);
+  gameEngine->entityManager = pushStruct(mainArena, entity_manager);
+  EntityManager_init(gameEngine->entityManager);
+  // FIXME: do we need this?
+  gameEngine->entityManager->gameArena = mainArena;
+
   gameEngine->frameContext = pushStruct(mainArena, frame_context);
   gameEngine->frameContext->frameArena = bootstrapArena(Kilobytes(500));
-  gameEngine->preFrame = _preFrame;
-  gameEngine->postFrame = _postFrame;
-  gameEngine->init = _init;
-  gameEngine->update = _update;
-  gameEngine->render = _render;
-  gameEngine->destroy = _destroy;
-  gameEngine->addSystem = _addSystem;
   gameEngine->systemsCount = 0;
   // TODO: find a solution to the limited number of systems
   gameEngine->systems = pushSizeTimes(gameEngine->mainArena, system_t *, 10);

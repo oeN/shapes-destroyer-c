@@ -1,10 +1,10 @@
 #pragma once
-#include "components.h"
+#include "types.h"
 
 #define PI 3.141592f
 
-#define degToRad(angleInDegrees) ((angleInDegrees)*PI / 180.0)
-#define radToDeg(angleInRadians) ((angleInRadians)*180.0 / PI)
+#define degToRad(angleInDegrees) ((angleInDegrees) * PI / 180.0)
+#define radToDeg(angleInRadians) ((angleInRadians) * 180.0 / PI)
 
 vec2 vec2FromAngle(float angle);
 vec2 vec2Splat(float value);

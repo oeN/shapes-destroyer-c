@@ -10,12 +10,20 @@
 #include <SDL3/SDL_main.h>
 
 #include "constants.h"
-#include "entity.h"
-#include "game_context.h"
-#include "game_engine.h"
+#include "ecs/entity.h"
+#include "ecs/init.c"
+#include "game_engine/game_engine.h"
+#include "game_engine/init.c"
 #include "memory.h"
-#include "systems.h"
 #include "types.h"
+
+typedef struct SDL_Offscreen_Buffer {
+  SDL_Texture *texture;
+  void *memory;
+  int width;
+  int height;
+  int pitch;
+} sdl_offscreen_buffer;
 
 typedef struct AppState {
   SDL_Window *window;
@@ -24,6 +32,8 @@ typedef struct AppState {
   u64 lastStep;
 } AppState;
 
+static sdl_offscreen_buffer GlobalBackBuffer;
+
 // these will be scene dependant
 action_map defaultActions[] = {
     {.keycode = SDL_SCANCODE_W, .action = ACTION_UP},
@@ -31,6 +41,8 @@ action_map defaultActions[] = {
     {.keycode = SDL_SCANCODE_D, .action = ACTION_RIGHT},
     {.keycode = SDL_SCANCODE_A, .action = ACTION_LEFT},
 };
+
+void fullLoop(AppState *as);
 
 // these do not depend on a scene so we can hardcode them
 action_state actionStateFromEventType(SDL_EventType eventType) {
@@ -44,6 +56,30 @@ action_state actionStateFromEventType(SDL_EventType eventType) {
   }
 }
 
+void ResizeTexture(sdl_offscreen_buffer *Buffer, SDL_Renderer *Renderer,
+                   int Width, int Height) {
+
+  if (Buffer->texture) {
+    SDL_DestroyTexture(Buffer->texture);
+  }
+  if (Buffer->memory) {
+    SDL_free(Buffer->memory);
+  }
+
+  int BytesPerPixel = 4;
+  Buffer->width = Width;
+  Buffer->height = Height;
+
+  Buffer->texture =
+      SDL_CreateTexture(Renderer, SDL_PIXELFORMAT_ARGB8888,
+                        SDL_TEXTUREACCESS_STREAMING, Width, Height);
+  // TODO: handle the fail case
+
+  int BitmapMemorySize = (Buffer->width * Buffer->height) * BytesPerPixel;
+  Buffer->memory = SDL_malloc(BitmapMemorySize);
+  Buffer->pitch = Width * BytesPerPixel;
+}
+
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
   srand(time(NULL)); // use current time as seed for random generator
 
@@ -55,53 +91,29 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     return SDL_APP_FAILURE;
   *appstate = as;
 
-  as->gameEngine = bootstrapGameEngine(Megabytes(10));
-  if (!as->gameEngine->mainArena)
-    return SDL_APP_FAILURE;
-
   if (!SDL_CreateWindowAndRenderer("shapes-destroyer", SCREEN_WIDTH,
-                                   SCREEN_HEIGHT, 0, &as->window,
-                                   &as->renderer))
+                                   SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE,
+                                   &as->window, &as->renderer))
     return SDL_APP_FAILURE;
 
-  // FIXME: this should not be done! (it's temporary)
-  as->gameEngine->renderer = as->renderer;
+  ResizeTexture(&GlobalBackBuffer, as->renderer, 1280, 720);
 
-  game_engine *gameEngine = as->gameEngine;
-  memory_arena *mainArena = gameEngine->mainArena;
-  game_context *gameContext = gameEngine->gameContext;
+  as->gameEngine = bootstrapGameEngine(Megabytes(10));
+  if (!as->gameEngine)
+    return SDL_APP_FAILURE;
 
-  scene *gameScene = pushStruct(mainArena, scene);
-  gameScene->id = 0;
-  gameScene->name = pushString(mainArena, "Game Scene");
-  gameScene->actionMap = defaultActions;
-  gameScene->actionsQueue = pushStruct(mainArena, linked_list_node);
-  setCurrentScene(gameContext, gameScene);
+  as->gameEngine->backBuffer->width = GlobalBackBuffer.width;
+  as->gameEngine->backBuffer->height = GlobalBackBuffer.height;
+  as->gameEngine->backBuffer->memory = GlobalBackBuffer.memory;
+  as->gameEngine->backBuffer->pitch = GlobalBackBuffer.pitch;
 
-  entity_manager *entityManager = getEntityManager(gameContext);
   as->lastStep = SDL_GetTicks();
-
-  // INIT
-  gameEngine->addSystem(gameEngine, GAME_ENGINE_INIT, spawnEntities);
-
-  // INPUT
-  gameEngine->addSystem(gameEngine, GAME_ENGINE_INPUT, handlePlayerInput);
-
-  // UPDATE
-  gameEngine->addSystem(gameEngine, GAME_ENGINE_UPDATE, moveSystem);
-  gameEngine->addSystem(gameEngine, GAME_ENGINE_UPDATE, keepInBoundsSystem);
-
-  // RENDER
-  gameEngine->addSystem(gameEngine, GAME_ENGINE_RENDER, renderShapeSystem);
-  gameEngine->addSystem(gameEngine, GAME_ENGINE_RENDER, renderPlayerSystem);
-
-  // the init is only called once
-  gameEngine->init(gameEngine);
+  GameEngine_init(as->gameEngine);
 
   return SDL_APP_CONTINUE;
 }
 
-action_kind findAction(scene *currentScene, SDL_Scancode key_code) {
+action_kind findAction(SDL_Scancode key_code) {
   action_kind found = ACTION_NONE;
 
   // TODO: use the scene actions
@@ -126,20 +138,22 @@ SDL_AppResult handle_key_event(AppState *as, SDL_Event *event) {
   case SDL_SCANCODE_Q:
   case SDL_SCANCODE_ESCAPE:
     return SDL_APP_SUCCESS;
+  /*case SDL_SCANCODE_A:*/
+  /*  fullLoop(as);*/
+  /*  return SDL_APP_CONTINUE;*/
   default: {
-    scene *currentScene = getCurrentScene(as->gameEngine->gameContext);
-    action_kind actionKind = findAction(currentScene, event->key.scancode);
+    action_kind actionKind = findAction(event->key.scancode);
     if (actionKind == ACTION_NONE)
       break;
 
-    entity_manager *em = getEntityManager(as->gameEngine->gameContext);
+    entity_manager *em = as->gameEngine->entityManager;
     action *foundAction = pushStruct(em->gameArena, action);
     foundAction->kind = actionKind;
     foundAction->state = actionStateFromEventType(event->type);
     linked_list_node *action_node = pushStruct(em->gameArena, linked_list_node);
     action_node->value = foundAction;
-
-    pushToLinkedList(em->gameArena, &currentScene->actionsQueue, action_node);
+    // TODO: add an entity with the found action and link it to the current
+    // player somehow
 
     break;
   }
@@ -158,29 +172,31 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
   }
   return SDL_APP_CONTINUE;
 }
+static void SDLUpdateWindow(SDL_Window *Window, SDL_Renderer *Renderer,
+                            sdl_offscreen_buffer *Buffer) {
+  SDL_UpdateTexture(Buffer->texture, 0, Buffer->memory, Buffer->pitch);
 
-SDL_AppResult SDL_AppIterate(void *appstate) {
-  AppState *as = (AppState *)appstate;
+  SDL_RenderTexture(Renderer, Buffer->texture, 0, 0);
+
+  SDL_RenderPresent(Renderer);
+}
+
+void fullLoop(AppState *as) {
   const Uint64 now = SDL_GetTicks();
 
-  // FIXME: all this iterate should be the other way around the game engine
-  // should be the main part and SDL just a service for it
-  as->gameEngine->preFrame(as->gameEngine);
-  // as->gameEngine->input(as->gameEngine);
+  // NOTE: is this the correct way to handle timing?
+  /*while ((now - as->lastStep) >= STEP_RATE_IN_MILLISECONDS) {*/
+  /*  GameEngine_update(as->gameEngine);*/
+  /*  as->lastStep += STEP_RATE_IN_MILLISECONDS;*/
+  /*}*/
 
-  while ((now - as->lastStep) >= STEP_RATE_IN_MILLISECONDS) {
-    as->gameEngine->update(as->gameEngine);
-    as->lastStep += STEP_RATE_IN_MILLISECONDS;
-  }
+  GameEngine_render(as->gameEngine);
 
-  SDL_SetRenderDrawColor(as->renderer, 0, 0, 0, 255);
-  SDL_RenderClear(as->renderer);
+  SDLUpdateWindow(as->window, as->renderer, &GlobalBackBuffer);
+}
 
-  as->gameEngine->render(as->gameEngine);
-
-  SDL_RenderPresent(as->renderer);
-
-  as->gameEngine->postFrame(as->gameEngine);
+SDL_AppResult SDL_AppIterate(void *appstate) {
+  fullLoop((AppState *)appstate);
 
   return SDL_APP_CONTINUE;
 }
@@ -189,7 +205,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
   if (appstate != NULL) {
     AppState *as = (AppState *)appstate;
 
-    as->gameEngine->destroy(as->gameEngine);
+    GameEngine_destroy(as->gameEngine);
     SDL_free(as);
   }
 }

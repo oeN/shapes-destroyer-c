@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../memory.h"
 #include "components.h"
-#include "memory.h"
 
 // FIXME: find a way to use the memory_arena and have dynamically sized arrays
 // theese variables should not exists at all, saved maybe the TAG one

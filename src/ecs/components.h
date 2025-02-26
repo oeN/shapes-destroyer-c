@@ -1,6 +1,6 @@
 #pragma once
 
-#include "types.h"
+#include "../types.h"
 
 typedef struct Component {
   // FIXME: we should be able to calculate the hash, for each component, only
