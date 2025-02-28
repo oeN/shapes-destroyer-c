@@ -14,9 +14,9 @@ typedef struct MemoryArena {
 #define Megabytes(n) 1024 * 1024 * n
 
 #define pushStruct(Arena, type) (type *)_pushSize(Arena, sizeof(type))
-#define pushString(Arena, string)                                              \
+#define pushString(Arena, string) \
   (char *)_pushSize(Arena, sizeof(char) * strlen(string))
-#define pushSizeTimes(Arena, type, times)                                      \
+#define pushSizeTimes(Arena, type, times) \
   (type *)_pushSize(Arena, sizeof(type) * times)
 #define getNodeValue(Node, type) (type *)_getNodeValue(Node)
 

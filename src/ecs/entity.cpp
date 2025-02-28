@@ -1,4 +1,3 @@
-
 #include "entity.h"
 #include "../base.h"
 #include "../constants.h"
@@ -17,8 +16,8 @@ void EntityManager_init(entity_manager *self) {
   }
 }
 
-Component *addComponent(entity_manager *em, entity *entity,
-                        component_name componentName, void *value) {
+Component *addComponent_(entity_manager *em, entity *entity,
+                         component_name componentName, void *value) {
   int entityId = entity->id;
 
   em->components[entityId][entity->totalComponents] = (Component){
@@ -65,8 +64,8 @@ Component *findComponent(entity_manager *em, entity *entity,
   return foundComponent;
 }
 
-void *getComponentValue(entity_manager *em, entity *entity,
-                        component_name componentName) {
+void *getComponentValue_(entity_manager *em, entity *entity,
+                         component_name componentName) {
 
   Component *foundComponent = findComponent(em, entity, componentName);
   if (!foundComponent)
@@ -150,7 +149,7 @@ void spawnEntity(entity_manager *em, bool addComponents) {
 
 int **getEntitiesByTag(entity_manager *em, u8 tag) {
   // add guard clause to make sure the tag is one of the EntityTag
-  return em->entitiesByTag[tag].entityIds;
+  return (int **)em->entitiesByTag[tag].entityIds;
 }
 
 entity *getEntityByTag(entity_manager *em, u8 tag, int position) {

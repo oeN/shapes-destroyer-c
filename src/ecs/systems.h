@@ -9,7 +9,12 @@
 typedef struct SystemParams {
   entity_manager *entityManager;
   game_offscreen_buffer *backBuffer;
+  wayne_audio_buffer *AudioBuffer;
   memory_arena *tempArena;
+  // temporary add a reference to the game engine to test out if it is better to
+  // create a struct with all the things we need or pass the game engine and
+  // implement getter functions to retrieve what we need
+  void *GameEngine;
 } system_params;
 
 typedef void (*system_callback)(system_params *);
@@ -18,6 +23,7 @@ typedef struct System {
   system_callback callback;
 } system_t;
 
+void generateAudio(system_params *params);
 void spawnEntities(system_params *params);
 
 void moveSystem(system_params *params);

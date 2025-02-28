@@ -9,6 +9,12 @@
 #define MAX_ENTITY_TAGS 10
 #define MAX_COMPONENTS_PER_ENTITY 20
 
+#define addComponent(em, e, name, value)                                       \
+  addComponent_(em, e, (component_name)name, value)
+
+#define getComponentValue(em, e, name, type)                                   \
+  (type *)getComponentValue_(em, e, (component_name)name)
+
 typedef struct Entity {
   int id;
   int totalComponents;
@@ -52,8 +58,8 @@ typedef struct NewEntityParams {
 void EntityManager_init(entity_manager_ptr self);
 entity *getPlayer(entity_manager *EntityManager);
 
-Component *addComponent(entity_manager *em, entity *entity,
-                        component_name componentName, void *value);
+Component *addComponent_(entity_manager *em, entity *entity,
+                         component_name componentName, void *value);
 Component *addComponentToCurrentPlayer(entity_manager *em,
                                        component_name componentName,
                                        void *value);
@@ -62,8 +68,8 @@ void removeComponent(entity_manager *em, Component *c, int entityId);
 
 Component *findComponent(entity_manager *em, entity *entity,
                          component_name componentName);
-void *getComponentValue(entity_manager *em, entity *entity,
-                        component_name componentName);
+void *getComponentValue_(entity_manager *em, entity *entity,
+                         component_name componentName);
 
 entity *getEntity(entity_manager *em, int entityId);
 entity *getEntityByTag(entity_manager *em, u8 tag, int position);

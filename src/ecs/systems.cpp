@@ -1,5 +1,8 @@
 
 #include "systems.h"
+#include "../game_engine/game_engine.h"
+#include <math.h>
+
 #include "../constants.h"
 #include "../mymath.h"
 #include "../types.h"
@@ -9,6 +12,31 @@
 // NOTE: do we really want to use guard clause in the systems?
 // I want them to break if I'm not passing something to it, if needed we can
 // implement the checks later on
+
+void generateAudio(system_params *params) {
+  wayne_audio_buffer *Buffer = params->AudioBuffer;
+
+  if (!Buffer) {
+    // we don't have audio
+    // TODO: diagnostic
+    return;
+  }
+
+  int SampleCount = Buffer->BufferSize / Buffer->BytesPerSample;
+  float *SampleOut = (float *)Buffer->Data;
+  local_persist float tSine;
+
+  for (int i = 0; i < SampleCount; i++) {
+    float SineValue = sinf(tSine);
+
+    float SampleValue = (float)(SineValue + Buffer->ToneVolume);
+
+    *SampleOut++ = SampleValue;
+    *SampleOut++ = SampleValue;
+
+    tSine += 2.0f * PI * 1.0f / (float)Buffer->WavePeriod;
+  }
+}
 
 void spawnEntities(system_params *params) {
 #if SYSTEM_GUARDS
@@ -28,8 +56,14 @@ void spawnEntities(system_params *params) {
 void renderWeirdGradient(system_params *params) {
   game_offscreen_buffer *Buffer = params->backBuffer;
 
+  wayne_controller_input Controller =
+      Wayne_getControllerInput((wayne_t *)params->GameEngine, 0);
+
   uint16 BlueOffset = 128;
-  uint16 GreenOffset = 128;
+  local_persist uint16 GreenOffset = 0;
+  if (Controller.ButtonSouth.isDown) {
+    GreenOffset += 2;
+  }
 
   uint8 *Row = (uint8 *)Buffer->memory;
   for (int Y = 0; Y < Buffer->height; ++Y) {
@@ -67,19 +101,19 @@ void renderPlayerSystem(system_params *params) {
   if (e->totalComponents <= 0)
     return;
 
-  const Position *pos = getComponentValue(em, e, (component_name) "Position");
+  const Position *pos = getComponentValue(em, e, "Position", Position);
   if (!pos)
     return;
 
-  const Velocity *vel = getComponentValue(em, e, "Velocity");
+  const Velocity *vel = getComponentValue(em, e, "Velocity", Velocity);
   if (!vel)
     return;
 
-  const Shape *shape = getComponentValue(em, e, "Shape");
+  const Shape *shape = getComponentValue(em, e, "Shape", Shape);
   if (!shape)
     return;
 
-  const Color *color = getComponentValue(em, e, "Color");
+  const Color *color = getComponentValue(em, e, "Color", Color);
   if (!color)
     return;
 
@@ -111,19 +145,19 @@ void renderShapeSystem(system_params *params) {
     if (e->totalComponents <= 0)
       continue;
 
-    const Position *pos = getComponentValue(em, e, "Position");
+    const Position *pos = getComponentValue(em, e, "Position", Position);
     if (!pos)
       continue;
 
-    const Velocity *vel = getComponentValue(em, e, "Velocity");
+    const Velocity *vel = getComponentValue(em, e, "Velocity", Velocity);
     if (!vel)
       continue;
 
-    const Shape *shape = getComponentValue(em, e, "Shape");
+    const Shape *shape = getComponentValue(em, e, "Shape", Shape);
     if (!shape)
       continue;
 
-    const Color *color = getComponentValue(em, e, "Color");
+    const Color *color = getComponentValue(em, e, "Color", Color);
     if (!color)
       continue;
 
@@ -179,11 +213,11 @@ void moveSystem(system_params *params) {
     if (e->totalComponents <= 0)
       continue;
 
-    Position *pos = getComponentValue(em, e, "Position");
+    Position *pos = getComponentValue(em, e, "Position", Position);
     if (!pos)
       continue;
 
-    const Position *vel = getComponentValue(em, e, "Velocity");
+    const Position *vel = getComponentValue(em, e, "Velocity", Velocity);
     if (!vel)
       continue;
 
@@ -208,11 +242,11 @@ void keepInBoundsSystem(system_params *params) {
     if (e->totalComponents <= 0)
       continue;
 
-    Position *pos = getComponentValue(em, e, "Position");
+    Position *pos = getComponentValue(em, e, "Position", Position);
     if (!pos)
       continue;
 
-    Velocity *vel = getComponentValue(em, e, "Velocity");
+    Velocity *vel = getComponentValue(em, e, "Velocity", Velocity);
     if (!vel)
       continue;
 
@@ -236,7 +270,7 @@ void handlePlayerInput(system_params *params) {
   if (!player)
     return;
 
-  Velocity *vel = getComponentValue(em, player, "Velocity");
+  Velocity *vel = getComponentValue(em, player, "Velocity", Velocity);
   if (!vel)
     return;
 

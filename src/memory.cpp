@@ -15,13 +15,13 @@ void debugArena(memory_arena *arena) {
 }
 
 memory_arena *bootstrapArena(memory_size totalSize) {
-  memory_arena *arena = malloc(sizeof(memory_arena));
+  memory_arena *arena = (memory_arena *)malloc(sizeof(memory_arena));
   initArena(arena, totalSize);
   return arena;
 }
 
 void initArena(memory_arena *arena, memory_size totalSize) {
-  arena->startAddress = malloc(totalSize);
+  arena->startAddress = (u8 *)malloc(totalSize);
   arena->totalSize = totalSize;
   arena->used = 0;
   memset(arena->startAddress, 0, totalSize);

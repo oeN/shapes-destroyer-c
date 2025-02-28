@@ -11,3 +11,4 @@ devenv.local.nix
 build
 compile_commands.json
 .cache
+.zed

@@ -1,18 +1,19 @@
 #pragma once
 
+#include "../constants.h"
 #include "../ecs/entity.h"
 #include "../ecs/systems.h"
 #include "../memory.h"
 #include "types.h"
 
-typedef struct GameEngine game_engine;
+typedef struct GameEngine wayne_t;
 
 typedef enum GameLoopStage { //
-  GAME_ENGINE_INIT,
-  GAME_ENGINE_INPUT,
-  GAME_ENGINE_UPDATE,
-  GAME_ENGINE_RENDER
-} game_loop_stage;
+  WAYNE_INIT,
+  WAYNE_INPUT,
+  WAYNE_UPDATE,
+  WAYNE_RENDER
+} wayne_loop_stage;
 
 // for a single frame the context is always the same,
 // like for the system_params
@@ -22,24 +23,30 @@ typedef struct frame_context {
 } frame_context;
 
 struct GameEngine {
+  u64 msFromStart;
   memory_arena *mainArena;
   entity_manager *entityManager;
   frame_context *frameContext;
-  game_offscreen_buffer *backBuffer;
+  game_offscreen_buffer *BackBuffer;
+  wayne_audio_buffer *AudioBuffer;
+  wayne_controller_input Controllers[MAX_N_CONTROLLERS];
 
-  u8 systemsCount;
-  system_t **systems;
+  u8 SystemsCount;
+  system_t **Systems;
 };
 
-game_engine *bootstrapGameEngine(memory_size mainArenaSize);
+wayne_t *bootstrapWayne(memory_size mainArenaSize);
 
-void GameEngine_preFrame(game_engine *self);
-void GameEngine_postFrame(game_engine *self);
+void Wayne_preFrame(wayne_t *self);
+void Wayne_postFrame(wayne_t *self);
 
-void GameEngine_init(game_engine *self);
-void GameEngine_update(game_engine *self);
-void GameEngine_render(game_engine *self);
+void Wayne_init(wayne_t *self, u64 msFromStart);
+void Wayne_updateAndRender(
+    wayne_t *self, u64 msFromStart,
+    wayne_controller_input Controllers[MAX_N_CONTROLLERS]);
 
-void GameEngine_destroy(game_engine *self);
-int GameEngine_addSystem(game_engine *self, game_loop_stage stage,
-                         system_callback systemCallback);
+void Wayne_destroy(wayne_t *self);
+int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
+                    system_callback systemCallback);
+wayne_controller_input Wayne_getControllerInput(wayne_t *GameEngine,
+                                                int ControllerIndex);
