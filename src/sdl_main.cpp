@@ -1,6 +1,3 @@
-#include <SDL3/SDL_events.h>
-#include <SDL3/SDL_joystick.h>
-#include <SDL3/SDL_log.h>
 #include <stdlib.h>
 #include <time.h>
 
