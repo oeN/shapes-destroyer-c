@@ -1,4 +1,3 @@
-
 #include "systems.h"
 #include "../game_engine/game_engine.h"
 #include <math.h>
@@ -87,10 +86,10 @@ void renderWeirdGradient(system_params *params) {
       BlueOffset -= 2;
   }
 
-  uint8 *Row = (uint8 *)Buffer->memory;
-  for (int Y = 0; Y < Buffer->height; ++Y) {
+  uint8 *Row = (uint8 *)Buffer->Memory;
+  for (int Y = 0; Y < Buffer->Height; ++Y) {
     uint32 *Pixel = (uint32 *)Row;
-    for (int X = 0; X < Buffer->width; ++X) {
+    for (int X = 0; X < Buffer->Width; ++X) {
       uint8 Blue = (X + BlueOffset);
       uint8 Green = (Y + GreenOffset);
       /*uint8 Blue = 0;*/
@@ -101,7 +100,7 @@ void renderWeirdGradient(system_params *params) {
       *Pixel++ = ((Alpha << 24) | ((Red << 16) | ((Green << 8) | Blue)));
     }
 
-    Row += Buffer->pitch;
+    Row += Buffer->Pitch;
   }
 }
 

@@ -3,10 +3,10 @@
 #include "../base_types.h"
 
 typedef struct GameOffscreenBuffer {
-  void *memory;
-  int width;
-  int height;
-  int pitch;
+  void *Memory;
+  int Width;
+  int Height;
+  int Pitch;
 } game_offscreen_buffer;
 
 struct wayne_audio_buffer {

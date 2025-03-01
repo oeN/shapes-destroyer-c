@@ -19,19 +19,13 @@
 #include "memory.h"
 #include "mymath.cpp"
 
-typedef struct SDL_Offscreen_Buffer {
-  SDL_Texture *texture;
-  void *memory;
-  int width;
-  int height;
-  int pitch;
+typedef struct sdl_offscreen_buffer {
+  SDL_Texture *Texture;
+  void *Memory;
+  int Width;
+  int Height;
+  int Pitch;
 } sdl_offscreen_buffer;
-
-typedef struct AppState {
-  SDL_Window *window;
-  SDL_Renderer *renderer;
-  wayne_t *gameEngine;
-} AppState;
 
 struct sdl_controllers_mapping {
   int ControllersCount;
@@ -41,42 +35,49 @@ struct sdl_controllers_mapping {
   wayne_controller_input Controllers[MAX_N_CONTROLLERS];
 };
 
+typedef struct app_state {
+  SDL_Window *Window;
+  SDL_Renderer *Renderer;
+  wayne_t *GameEngine;
+  sdl_offscreen_buffer BackBuffer;
+  SDL_AudioDeviceID AudioDeviceId;
+  SDL_AudioStream *AudioStream;
+  wayne_audio_buffer AudioBuffer;
+  sdl_controllers_mapping Controllers;
+} app_state;
+
+
 #define MyInitFlags SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK
 
 // TODO: do not use globals if not necessary, remove the one that arent;
 // these are just for convenience and fast prototype
-global_variable sdl_offscreen_buffer GlobalBackBuffer;
-global_variable SDL_AudioDeviceID GlobalAudioDeviceID;
-global_variable SDL_AudioStream *GlobalAudioStream;
-global_variable wayne_audio_buffer GlobalAudioBuffer;
-
-global_variable sdl_controllers_mapping GlobalControllers;
 
 internal void MySDL_ResizeTexture(sdl_offscreen_buffer *Buffer,
                                   SDL_Renderer *Renderer, int Width,
                                   int Height) {
-  if (Buffer->texture) {
-    SDL_DestroyTexture(Buffer->texture);
+  if (Buffer->Texture) {
+    SDL_DestroyTexture(Buffer->Texture);
   }
-  if (Buffer->memory) {
-    SDL_free(Buffer->memory);
+  if (Buffer->Memory) {
+    SDL_free(Buffer->Memory);
   }
 
   int BytesPerPixel = 4;
-  Buffer->width = Width;
-  Buffer->height = Height;
+  Buffer->Width = Width;
+  Buffer->Height = Height;
 
-  Buffer->texture =
+  Buffer->Texture =
       SDL_CreateTexture(Renderer, SDL_PIXELFORMAT_ARGB8888,
                         SDL_TEXTUREACCESS_STREAMING, Width, Height);
   // TODO: handle the fail case
-
-  int BitmapMemorySize = (Buffer->width * Buffer->height) * BytesPerPixel;
-  Buffer->memory = SDL_malloc(BitmapMemorySize);
-  Buffer->pitch = Width * BytesPerPixel;
+  Assert(Buffer->Texture);
+  
+  int BitmapMemorySize = (Buffer->Width * Buffer->Height) * BytesPerPixel;
+  Buffer->Memory = SDL_malloc(BitmapMemorySize);
+  Buffer->Pitch = Width * BytesPerPixel;
 }
 
-internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer) {
+internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer, SDL_AudioStream **OutAudioStream) {
   // temporary solution, it should be done outside of here
   Buffer->SamplesPerSecond = 48000;
   Buffer->ToneHz = 260;
@@ -87,7 +88,7 @@ internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer) {
   Buffer->WavePeriod = Buffer->SamplesPerSecond / Buffer->ToneHz;
 
   // open an audio device
-  SDL_AudioSpec spec = {
+  SDL_AudioSpec Spec = {
       .format = SDL_AUDIO_F32,
       .channels = Buffer->Channels,
       .freq = Buffer->SamplesPerSecond,
@@ -100,71 +101,73 @@ internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer) {
   }
 
   // create an audio stream
-  GlobalAudioStream = SDL_OpenAudioDeviceStream(
-      SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-  if (!GlobalAudioStream) {
+  *OutAudioStream = SDL_OpenAudioDeviceStream(
+      SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &Spec, NULL, NULL);
+  if (!*OutAudioStream) {
     SDL_Log("Failed to create audio stream: %s", SDL_GetError());
     return 0;
   }
 
-  SDL_ClearAudioStream(GlobalAudioStream);
-  SDL_SetAudioStreamGain(GlobalAudioStream, 0.1f);
-  SDL_ResumeAudioStreamDevice(GlobalAudioStream);
+  SDL_ClearAudioStream(*OutAudioStream);
+  SDL_SetAudioStreamGain(*OutAudioStream, 0.1f);
+  SDL_ResumeAudioStreamDevice(*OutAudioStream);
 
   return 1;
 }
 
-internal void MySDL_FillSoundBuffer(wayne_audio_buffer *Buffer) {
-  SDL_PutAudioStreamData(GlobalAudioStream, Buffer->Data, Buffer->BufferSize);
+internal void MySDL_FillSoundBuffer(SDL_AudioStream *AudioStream, wayne_audio_buffer *Buffer) {
+  SDL_PutAudioStreamData(AudioStream, Buffer->Data, Buffer->BufferSize);
 }
 
-SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
+SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
   srand(time(NULL)); // use current time as seed for random generator
 
   if (!SDL_Init(MyInitFlags))
     return SDL_APP_FAILURE;
 
-  AppState *as = (AppState *)SDL_calloc(1, sizeof(AppState));
-  if (!as)
+  app_state *As = (app_state *)SDL_calloc(1, sizeof(app_state));
+  if (!As)
     return SDL_APP_FAILURE;
-  *appstate = as;
+  *AppState = As;
 
   if (!SDL_CreateWindowAndRenderer("shapes-destroyer", SCREEN_WIDTH,
                                    SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE,
-                                   &as->window, &as->renderer))
+                                   &As->Window, &As->Renderer))
     return SDL_APP_FAILURE;
 
-  if (!MySDL_InitSoundBuffer(&GlobalAudioBuffer))
+  if (!MySDL_InitSoundBuffer(&As->AudioBuffer, &As->AudioStream))
     return SDL_APP_FAILURE;
 
-  as->gameEngine = bootstrapWayne(Megabytes(10));
-  if (!as->gameEngine)
+  As->GameEngine = bootstrapWayne(Megabytes(10));
+  if (!As->GameEngine)
     return SDL_APP_FAILURE;
 
-  as->gameEngine->AudioBuffer = &GlobalAudioBuffer;
+  As->GameEngine->AudioBuffer = &As->AudioBuffer;
 
-  MySDL_ResizeTexture(&GlobalBackBuffer, as->renderer, 1280, 720);
-  as->gameEngine->BackBuffer->width = GlobalBackBuffer.width;
-  as->gameEngine->BackBuffer->height = GlobalBackBuffer.height;
-  as->gameEngine->BackBuffer->memory = GlobalBackBuffer.memory;
-  as->gameEngine->BackBuffer->pitch = GlobalBackBuffer.pitch;
+  MySDL_ResizeTexture(&As->BackBuffer, As->Renderer, 1280, 720);
+  As->GameEngine->BackBuffer->Width = As->BackBuffer.Width;
+  As->GameEngine->BackBuffer->Height = As->BackBuffer.Height;
+  As->GameEngine->BackBuffer->Memory = As->BackBuffer.Memory;
+  As->GameEngine->BackBuffer->Pitch = As->BackBuffer.Pitch;
 
-  Wayne_init(as->gameEngine, SDL_GetTicks());
+  Wayne_init(As->GameEngine, SDL_GetTicks());
 
   // init the keyboard controller that for now is always active
-  GlobalControllers.Controllers[0] =
-      wayne_controller_input{.IsActive = true, .IsAnalog = false};
-  GlobalControllers.ControllersCount++;
+  wayne_controller_input DefaultController = {0};
+  DefaultController.IsActive = true;
+  DefaultController.IsAnalog = false;
+  As->Controllers.Controllers[0] = DefaultController;
+  As->Controllers.ControllersCount++;
 
   return SDL_APP_CONTINUE;
 }
 
-SDL_AppResult handle_key_event(AppState *as, SDL_Event *event) {
+SDL_AppResult handle_key_event(SDL_Event *Event) {
   // for now ignore repeated keys
-  if (event->key.repeat > 0)
+  if (Event->key.repeat > 0)
     return SDL_APP_CONTINUE;
 
-  switch (event->key.scancode) {
+  switch (Event->key.scancode) {
   case SDL_SCANCODE_Q:
   case SDL_SCANCODE_ESCAPE:
     return SDL_APP_SUCCESS;
@@ -175,8 +178,8 @@ SDL_AppResult handle_key_event(AppState *as, SDL_Event *event) {
   return SDL_APP_CONTINUE;
 }
 
-void MySDL_AddJoystick(SDL_Event *event, sdl_controllers_mapping *Controllers) {
-  const SDL_JoystickID JoystickId = event->jdevice.which;
+void MySDL_AddJoystick(SDL_Event *Event, sdl_controllers_mapping *Controllers) {
+  const SDL_JoystickID JoystickId = Event->jdevice.which;
   SDL_Log("Joystick added %d", JoystickId);
   SDL_Joystick *Joystick = SDL_OpenJoystick(JoystickId);
   if (!Joystick) {
@@ -207,12 +210,12 @@ ControllerByJoystickId(SDL_JoystickID JoystickId,
   return NULL;
 }
 
-float MySDL_NormalizeJoystickAxis(int16_t value) {
-  int8 Direction = value > 0 ? 1 : -1;
+float MySDL_NormalizeJoystickAxis(int16_t Value) {
+  int8 Direction = Value > 0 ? 1 : -1;
   float DeadZoneThreshold = 0.25 * Direction;
-  float Factor = value > 0 ? SDL_JOYSTICK_AXIS_MAX : SDL_JOYSTICK_AXIS_MIN;
+  float Factor = Value > 0 ? SDL_JOYSTICK_AXIS_MAX : SDL_JOYSTICK_AXIS_MIN;
 
-  float NormalizedValue = ((float)value / Factor) * Direction;
+  float NormalizedValue = ((float)Value / Factor) * Direction;
 
   if (NormalizedValue < 0 && NormalizedValue > DeadZoneThreshold)
     return 0.0;
@@ -223,50 +226,50 @@ float MySDL_NormalizeJoystickAxis(int16_t value) {
   return NormalizedValue;
 }
 
-void MySDL_HandleButtonEvent(SDL_Event *event,
+void MySDL_HandleButtonEvent(SDL_Event *Event,
                              sdl_controllers_mapping *Controllers) {
   // TODO: handle up and down with the transitions counter
 
   wayne_controller_input *CurrentController =
-      ControllerByJoystickId(event->jaxis.which, Controllers);
+      ControllerByJoystickId(Event->jaxis.which, Controllers);
   if (!CurrentController)
     return;
 
-  switch (event->jbutton.button) {
+  switch (Event->jbutton.button) {
   case 0: {
-    CurrentController->ButtonSouth.isDown = event->jbutton.down;
+    CurrentController->ButtonSouth.isDown = Event->jbutton.down;
   } break;
 
   case 1: {
-    CurrentController->ButtonEast.isDown = event->jbutton.down;
+    CurrentController->ButtonEast.isDown = Event->jbutton.down;
   } break;
 
   case 2: {
-    CurrentController->ButtonWest.isDown = event->jbutton.down;
+    CurrentController->ButtonWest.isDown = Event->jbutton.down;
   } break;
 
   case 3: {
-    CurrentController->ButtonNorth.isDown = event->jbutton.down;
+    CurrentController->ButtonNorth.isDown = Event->jbutton.down;
   } break;
   }
 }
 
-SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
-  AppState *as = (AppState *)appstate;
-  switch (event->type) {
+SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event) {
+  app_state *As = (app_state *)AppState;
+  switch (Event->type) {
 
   case SDL_EVENT_QUIT:
     return SDL_APP_SUCCESS;
 
   case SDL_EVENT_JOYSTICK_ADDED: {
-    MySDL_AddJoystick(event, &GlobalControllers);
+    MySDL_AddJoystick(Event, &As->Controllers);
   }
     return SDL_APP_CONTINUE;
 
   case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
     wayne_controller_input *CurrentController =
-        ControllerByJoystickId(event->jaxis.which, &GlobalControllers);
-    SDL_JoyAxisEvent AxisEvent = event->jaxis;
+        ControllerByJoystickId(Event->jaxis.which, &As->Controllers);
+    SDL_JoyAxisEvent AxisEvent = Event->jaxis;
     if (CurrentController) {
       CurrentController->IsAnalog = true;
 
@@ -283,7 +286,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 
   case SDL_EVENT_JOYSTICK_BUTTON_UP:
   case SDL_EVENT_JOYSTICK_BUTTON_DOWN: {
-    MySDL_HandleButtonEvent(event, &GlobalControllers);
+    MySDL_HandleButtonEvent(Event, &As->Controllers);
   }
     return SDL_APP_CONTINUE;
 
@@ -294,43 +297,36 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 
   case SDL_EVENT_KEY_DOWN:
   case SDL_EVENT_KEY_UP:
-    return handle_key_event(as, event);
+    return handle_key_event(Event);
   }
   return SDL_APP_CONTINUE;
 }
 
 internal void MySDL_UpdateWindow(SDL_Window *Window, SDL_Renderer *Renderer,
                                  sdl_offscreen_buffer *Buffer) {
-  SDL_UpdateTexture(Buffer->texture, 0, Buffer->memory, Buffer->pitch);
+  SDL_UpdateTexture(Buffer->Texture, 0, Buffer->Memory, Buffer->Pitch);
 
-  SDL_RenderTexture(Renderer, Buffer->texture, 0, 0);
+  SDL_RenderTexture(Renderer, Buffer->Texture, 0, 0);
 
   SDL_RenderPresent(Renderer);
 }
 
-SDL_AppResult SDL_AppIterate(void *appstate) {
-  AppState *as = (AppState *)appstate;
+SDL_AppResult SDL_AppIterate(void *AppState) {
+  app_state *As = (app_state *)AppState;
+  const Uint64 Now = SDL_GetTicks();
 
-  const Uint64 now = SDL_GetTicks();
+  Wayne_updateAndRender(As->GameEngine, Now, As->Controllers.Controllers);
 
-  // FIXME: from the code is not clear that the audio buffer is being updated
-  // most probably I'm doing something wrong because it should be clear! fix it
-  // later
-  Wayne_updateAndRender(as->gameEngine, now, GlobalControllers.Controllers);
-
-  // we have a pointer to the GlobalAudioBuffer inside the gameEngine and
-  // we update that with the Wayne_updateAndRender function
-  MySDL_FillSoundBuffer(&GlobalAudioBuffer);
-  MySDL_UpdateWindow(as->window, as->renderer, &GlobalBackBuffer);
+  MySDL_FillSoundBuffer(As->AudioStream, &As->AudioBuffer);
+  MySDL_UpdateWindow(As->Window, As->Renderer, &As->BackBuffer);
 
   return SDL_APP_CONTINUE;
 }
 
-void SDL_AppQuit(void *appstate, SDL_AppResult result) {
-  if (appstate != NULL) {
-    AppState *as = (AppState *)appstate;
-
-    Wayne_destroy(as->gameEngine);
-    SDL_free(as);
+void SDL_AppQuit(void *AppState, SDL_AppResult Result) {
+  if (AppState != NULL) {
+    app_state *As = (app_state *)AppState;
+    Wayne_destroy(As->GameEngine);
+    SDL_free(As);
   }
 }
