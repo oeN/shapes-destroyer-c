@@ -56,13 +56,35 @@ void spawnEntities(system_params *params) {
 void renderWeirdGradient(system_params *params) {
   game_offscreen_buffer *Buffer = params->backBuffer;
 
-  wayne_controller_input Controller =
-      Wayne_getControllerInput((wayne_t *)params->GameEngine, 0);
-
-  uint16 BlueOffset = 128;
+  local_persist uint16 BlueOffset = 0;
   local_persist uint16 GreenOffset = 0;
-  if (Controller.ButtonSouth.isDown) {
-    GreenOffset += 2;
+
+  uint8 MaxAccelleration = 5;
+
+  // for now loop through all the controllers in order to see the platform code
+  // works
+  for (int ControllerIndex = 0; ControllerIndex < MAX_N_CONTROLLERS;
+       ControllerIndex++) {
+    wayne_controller_input Controller =
+        Wayne_getController((wayne_t *)params->GameEngine, ControllerIndex);
+
+    if (!Controller.IsActive)
+      continue;
+
+    GreenOffset += MaxAccelleration * Controller.StickX;
+    BlueOffset += MaxAccelleration * Controller.StickY;
+
+    if (Controller.ButtonSouth.isDown)
+      GreenOffset += 2;
+
+    if (Controller.ButtonNorth.isDown)
+      GreenOffset -= 2;
+
+    if (Controller.ButtonEast.isDown)
+      BlueOffset += 2;
+
+    if (Controller.ButtonWest.isDown)
+      BlueOffset -= 2;
   }
 
   uint8 *Row = (uint8 *)Buffer->memory;

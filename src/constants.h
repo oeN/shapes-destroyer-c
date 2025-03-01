@@ -2,4 +2,5 @@
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
 
-#define MAX_N_CONTROLLERS 4
+// 4 controllers and 1 keyboard, the keyboard is always the 0 index
+#define MAX_N_CONTROLLERS 5

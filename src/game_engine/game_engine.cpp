@@ -2,7 +2,8 @@
 
 #include <stdio.h>
 
-#include "memory.h"
+#include "../base.h"
+#include "../memory.h"
 
 void printDebugInfo(wayne_t *gameEngine) {
   printf("------ START UPDATE -----\n");
@@ -75,7 +76,12 @@ void Wayne_init(wayne_t *self, u64 msFromStart) {
 void Wayne_updateAndRender(wayne_t *self, u64 msFromStart,
                            wayne_controller_input *Controllers) {
   self->msFromStart = msFromStart;
-  *self->Controllers = *Controllers;
+  // FIXME: I feel there is a better way to do this but I might be wrong check
+  // it
+  for (int ControllerIndex = 0; ControllerIndex < MAX_N_CONTROLLERS;
+       ControllerIndex++) {
+    self->Controllers[ControllerIndex] = Controllers[ControllerIndex];
+  }
   loopThroughSystems(self, WAYNE_INPUT);
   // TODO: calc and use delta Time or run the update enough to keep the
   // framerate stable
@@ -125,8 +131,8 @@ wayne_t *bootstrapWayne(memory_size mainArenaSize) {
   return gameEngine;
 }
 
-wayne_controller_input Wayne_getControllerInput(wayne_t *GameEngine,
-                                                int ControllerIndex) {
-  // TODO: handle if the given index is greater than the array size
+wayne_controller_input Wayne_getController(wayne_t *GameEngine,
+                                           int ControllerIndex) {
+  Assert(ControllerIndex < ArrayCount(GameEngine->Controllers));
   return GameEngine->Controllers[ControllerIndex];
 }

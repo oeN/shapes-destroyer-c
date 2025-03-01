@@ -1,3 +1,6 @@
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_joystick.h>
+#include <SDL3/SDL_log.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -6,9 +9,11 @@
 #include <SDL3/SDL_main.h>
 
 #include "base.cpp"
+
+#define Assert(Expression) SDL_assert(Expression)
+
 #include "base_types.h"
 #include "constants.h"
-#include "ecs/entity.h"
 #include "ecs/init.cpp"
 #include "game_engine/game_engine.h"
 #include "game_engine/init.cpp"
@@ -16,7 +21,6 @@
 #include "memory.cpp"
 #include "memory.h"
 #include "mymath.cpp"
-#include "types.h"
 
 typedef struct SDL_Offscreen_Buffer {
   SDL_Texture *texture;
@@ -34,6 +38,9 @@ typedef struct AppState {
 
 struct sdl_controllers_mapping {
   int ControllersCount;
+  // even if the 0 is always the keyboard, for convenience we create an array of
+  // the same size for the JoysticIds
+  SDL_JoystickID JoysticIdsByIndex[MAX_N_CONTROLLERS];
   wayne_controller_input Controllers[MAX_N_CONTROLLERS];
 };
 
@@ -48,27 +55,9 @@ global_variable wayne_audio_buffer GlobalAudioBuffer;
 
 global_variable sdl_controllers_mapping GlobalControllers;
 
-// these will be scene dependant
-action_map defaultActions[] = {
-    {.keycode = SDL_SCANCODE_W, .action = ACTION_UP},
-    {.keycode = SDL_SCANCODE_S, .action = ACTION_DOWN},
-    {.keycode = SDL_SCANCODE_D, .action = ACTION_RIGHT},
-    {.keycode = SDL_SCANCODE_A, .action = ACTION_LEFT},
-};
-
-action_state actionStateFromEventType(u32 eventType) {
-  switch (eventType) {
-  case SDL_EVENT_KEY_DOWN:
-    return ACTION_STATE_START;
-  case SDL_EVENT_KEY_UP:
-    return ACTION_STATE_STOP;
-  default:
-    return ACTION_STATE_NONE;
-  }
-}
-
-internal void SDLResizeTexture(sdl_offscreen_buffer *Buffer,
-                               SDL_Renderer *Renderer, int Width, int Height) {
+internal void MySDL_ResizeTexture(sdl_offscreen_buffer *Buffer,
+                                  SDL_Renderer *Renderer, int Width,
+                                  int Height) {
   if (Buffer->texture) {
     SDL_DestroyTexture(Buffer->texture);
   }
@@ -129,11 +118,6 @@ internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer) {
 }
 
 internal void MySDL_FillSoundBuffer(wayne_audio_buffer *Buffer) {
-  // There are crackling sounds at the start and at the end even the function
-  // seems to ouput the correct data, for now remove the audio and think about
-  // it later
-  // return;
-
   SDL_PutAudioStreamData(GlobalAudioStream, Buffer->Data, Buffer->BufferSize);
 }
 
@@ -162,7 +146,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
   as->gameEngine->AudioBuffer = &GlobalAudioBuffer;
 
-  SDLResizeTexture(&GlobalBackBuffer, as->renderer, 1280, 720);
+  MySDL_ResizeTexture(&GlobalBackBuffer, as->renderer, 1280, 720);
   as->gameEngine->BackBuffer->width = GlobalBackBuffer.width;
   as->gameEngine->BackBuffer->height = GlobalBackBuffer.height;
   as->gameEngine->BackBuffer->memory = GlobalBackBuffer.memory;
@@ -170,23 +154,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 
   Wayne_init(as->gameEngine, SDL_GetTicks());
 
+  // init the keyboard controller that for now is always active
+  GlobalControllers.Controllers[0] =
+      wayne_controller_input{.IsActive = true, .IsAnalog = false};
+  GlobalControllers.ControllersCount++;
+
   return SDL_APP_CONTINUE;
-}
-
-action_kind findAction(SDL_Scancode key_code) {
-  action_kind found = ACTION_NONE;
-
-  // TODO: use the scene actions
-  u16 actionsSize = sizeof(defaultActions) / sizeof(defaultActions[0]);
-
-  for (int i = 0; i < actionsSize; i++) {
-    if (defaultActions[i].keycode == key_code) {
-      found = (action_kind)defaultActions[i].action;
-      break;
-    }
-  }
-
-  return found;
 }
 
 SDL_AppResult handle_key_event(AppState *as, SDL_Event *event) {
@@ -199,23 +172,86 @@ SDL_AppResult handle_key_event(AppState *as, SDL_Event *event) {
   case SDL_SCANCODE_ESCAPE:
     return SDL_APP_SUCCESS;
   default: {
-    action_kind actionKind = findAction(event->key.scancode);
-    if (actionKind == ACTION_NONE)
-      break;
-
-    entity_manager *em = as->gameEngine->entityManager;
-    action *foundAction = pushStruct(em->gameArena, action);
-    foundAction->kind = actionKind;
-    foundAction->state = actionStateFromEventType(event->type);
-    linked_list_node *action_node = pushStruct(em->gameArena, linked_list_node);
-    action_node->value = foundAction;
-    // TODO: add an entity with the found action and link it to the current
-    // player somehow
-
     break;
   }
   }
   return SDL_APP_CONTINUE;
+}
+
+void MySDL_AddJoystick(SDL_Event *event, sdl_controllers_mapping *Controllers) {
+  const SDL_JoystickID JoystickId = event->jdevice.which;
+  SDL_Log("Joystick added %d", JoystickId);
+  SDL_Joystick *Joystick = SDL_OpenJoystick(JoystickId);
+  if (!Joystick) {
+    SDL_Log("Joystick added but not opened %d error %s", JoystickId,
+            SDL_GetError());
+  }
+
+  int ControllerIndex = Controllers->ControllersCount;
+  // NOTE: I know it can be done all in the previous line but for now I prefer
+  // to be explicit about it
+  Controllers->ControllersCount++;
+
+  Controllers->JoysticIdsByIndex[ControllerIndex] = JoystickId;
+  wayne_controller_input *CurrentController =
+      &Controllers->Controllers[ControllerIndex];
+
+  CurrentController->IsActive = true;
+}
+
+wayne_controller_input *
+ControllerByJoystickId(SDL_JoystickID JoystickId,
+                       sdl_controllers_mapping *Controllers) {
+  for (int ControllerIndex = 0; ControllerIndex < Controllers->ControllersCount;
+       ControllerIndex++) {
+    if (Controllers->JoysticIdsByIndex[ControllerIndex] == JoystickId)
+      return &Controllers->Controllers[ControllerIndex];
+  }
+  return NULL;
+}
+
+float MySDL_NormalizeJoystickAxis(int16_t value) {
+  int8 Direction = value > 0 ? 1 : -1;
+  float DeadZoneThreshold = 0.25 * Direction;
+  float Factor = value > 0 ? SDL_JOYSTICK_AXIS_MAX : SDL_JOYSTICK_AXIS_MIN;
+
+  float NormalizedValue = ((float)value / Factor) * Direction;
+
+  if (NormalizedValue < 0 && NormalizedValue > DeadZoneThreshold)
+    return 0.0;
+
+  if (NormalizedValue > 0 && NormalizedValue < DeadZoneThreshold)
+    return 0.0;
+
+  return NormalizedValue;
+}
+
+void MySDL_HandleButtonEvent(SDL_Event *event,
+                             sdl_controllers_mapping *Controllers) {
+  // TODO: handle up and down with the transitions counter
+
+  wayne_controller_input *CurrentController =
+      ControllerByJoystickId(event->jaxis.which, Controllers);
+  if (!CurrentController)
+    return;
+
+  switch (event->jbutton.button) {
+  case 0: {
+    CurrentController->ButtonSouth.isDown = event->jbutton.down;
+  } break;
+
+  case 1: {
+    CurrentController->ButtonEast.isDown = event->jbutton.down;
+  } break;
+
+  case 2: {
+    CurrentController->ButtonWest.isDown = event->jbutton.down;
+  } break;
+
+  case 3: {
+    CurrentController->ButtonNorth.isDown = event->jbutton.down;
+  } break;
+  }
 }
 
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
@@ -226,38 +262,31 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
     return SDL_APP_SUCCESS;
 
   case SDL_EVENT_JOYSTICK_ADDED: {
-    const SDL_JoystickID Id = event->jdevice.which;
-    SDL_Log("Joystick added %d", Id);
-    SDL_Joystick *joystick = SDL_OpenJoystick(Id);
-    if (!joystick) {
-      SDL_Log("Joystick added but not opened %d error %s", Id, SDL_GetError());
-    }
-    // FIXME: handle the mapping of multiple controllers id/index, the id given
-    // by sdl could change if the controller is disconnected/reconnected, for
-    // now I'll use just the controller 0 and don't care about the index, I just
-    // want to see stuff moving
-    wayne_controller_input *CurrentController =
-        &GlobalControllers.Controllers[0];
-
-    CurrentController->isActive = true;
+    MySDL_AddJoystick(event, &GlobalControllers);
   }
     return SDL_APP_CONTINUE;
 
   case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
     wayne_controller_input *CurrentController =
-        &GlobalControllers.Controllers[0];
+        ControllerByJoystickId(event->jaxis.which, &GlobalControllers);
+    SDL_JoyAxisEvent AxisEvent = event->jaxis;
+    if (CurrentController) {
+      CurrentController->IsAnalog = true;
 
-    CurrentController->isAnalog = true;
+      if (AxisEvent.axis == 0)
+        CurrentController->StickY =
+            MySDL_NormalizeJoystickAxis(AxisEvent.value);
+
+      if (AxisEvent.axis == 1)
+        CurrentController->StickX =
+            MySDL_NormalizeJoystickAxis(AxisEvent.value);
+    }
   }
     return SDL_APP_CONTINUE;
 
   case SDL_EVENT_JOYSTICK_BUTTON_UP:
   case SDL_EVENT_JOYSTICK_BUTTON_DOWN: {
-    wayne_controller_input *CurrentController =
-        &GlobalControllers.Controllers[0];
-
-    if (event->jbutton.button == 0)
-      CurrentController->ButtonSouth.isDown = event->jbutton.down;
+    MySDL_HandleButtonEvent(event, &GlobalControllers);
   }
     return SDL_APP_CONTINUE;
 

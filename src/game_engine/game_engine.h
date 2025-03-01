@@ -48,5 +48,5 @@ void Wayne_updateAndRender(
 void Wayne_destroy(wayne_t *self);
 int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
                     system_callback systemCallback);
-wayne_controller_input Wayne_getControllerInput(wayne_t *GameEngine,
-                                                int ControllerIndex);
+wayne_controller_input Wayne_getController(wayne_t *GameEngine,
+                                           int ControllerIndex);
