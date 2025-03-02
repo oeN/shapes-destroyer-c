@@ -78,14 +78,6 @@ internal void MySDL_ResizeTexture(sdl_offscreen_buffer *Buffer,
 
 internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer,
                                    SDL_AudioStream **OutAudioStream) {
-  // temporary solution, it should be done outside of here
-  Buffer->SamplesPerSecond = 48000;
-  Buffer->ToneHz = 260;
-  Buffer->ToneVolume = 100;
-  Buffer->Channels = 2;
-  Buffer->BytesPerSample = sizeof(float) * Buffer->Channels;
-  Buffer->BufferSize = Buffer->BytesPerSample * Buffer->SamplesPerSecond;
-  Buffer->WavePeriod = Buffer->SamplesPerSecond / Buffer->ToneHz;
 
   // open an audio device
   SDL_AudioSpec Spec = {
@@ -94,29 +86,24 @@ internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer,
       .freq = Buffer->SamplesPerSecond,
   };
 
-  Buffer->Data = SDL_malloc(Buffer->BufferSize);
-  if (!Buffer->Data) {
-    SDL_Log("Cannot initialize audio buffer %s", SDL_GetError());
-    return 0;
-  }
-
   // create an audio stream
   *OutAudioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
-                                              &Spec, NULL, NULL);
+                                              &Spec, NULL, Buffer->Data);
   if (!*OutAudioStream) {
     SDL_Log("Failed to create audio stream: %s", SDL_GetError());
     return 0;
   }
 
-  SDL_ClearAudioStream(*OutAudioStream);
+  // SDL_ClearAudioStream(*OutAudioStream);
   SDL_SetAudioStreamGain(*OutAudioStream, 0.1f);
-  SDL_ResumeAudioStreamDevice(*OutAudioStream);
 
   return 1;
 }
 
 internal void MySDL_FillSoundBuffer(SDL_AudioStream *AudioStream,
                                     wayne_audio_buffer *Buffer) {
+  // FIXME: the audio doesn't work properly at the start and quit of the app
+  return;
   SDL_PutAudioStreamData(AudioStream, Buffer->Data, Buffer->BufferSize);
 }
 
@@ -136,8 +123,24 @@ SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
                                    &As->Window, &As->Renderer))
     return SDL_APP_FAILURE;
 
-  if (!MySDL_InitSoundBuffer(&As->AudioBuffer, &As->AudioStream))
+  {
+    // TODO: extract me somewhere
+    wayne_audio_buffer *Buffer = &As->AudioBuffer;
+    // temporary solution, it should be done outside of here
+    Buffer->SamplesPerSecond = 48000;
+    Buffer->ToneHz = 260;
+    Buffer->ToneVolume = 100;
+    Buffer->Channels = 2;
+    Buffer->BytesPerSample = sizeof(float) * Buffer->Channels;
+    Buffer->BufferSize = Buffer->BytesPerSample * Buffer->SamplesPerSecond;
+    Buffer->WavePeriod = Buffer->SamplesPerSecond / Buffer->ToneHz;
+
+    Buffer->Data = SDL_malloc(Buffer->BufferSize);
+  }
+  if (!As->AudioBuffer.Data) {
+    SDL_Log("Cannot initialize audio buffer %s", SDL_GetError());
     return SDL_APP_FAILURE;
+  }
 
   As->GameEngine = bootstrapWayne(Megabytes(10));
   if (!As->GameEngine)
@@ -152,6 +155,15 @@ SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
   As->GameEngine->BackBuffer->Pitch = As->BackBuffer.Pitch;
 
   Wayne_init(As->GameEngine, SDL_GetTicks());
+
+  // can we avoid the crackling sound by initializing the audio stream after the
+  // audio buffer has been filled with some data?
+  if (!MySDL_InitSoundBuffer(&As->AudioBuffer, &As->AudioStream))
+    return SDL_APP_FAILURE;
+
+  MySDL_FillSoundBuffer(As->AudioStream, &As->AudioBuffer);
+  // resume the audio stream once is filled
+  SDL_ResumeAudioStreamDevice(As->AudioStream);
 
   // init the keyboard controller that for now is always active
   wayne_controller_input DefaultController = {0};
@@ -361,7 +373,9 @@ SDL_AppResult SDL_AppIterate(void *AppState) {
 void SDL_AppQuit(void *AppState, SDL_AppResult Result) {
   if (AppState != NULL) {
     app_state *As = (app_state *)AppState;
+    SDL_PauseAudioStreamDevice(As->AudioStream);
     Wayne_destroy(As->GameEngine);
+    SDL_free(As->AudioBuffer.Data);
     SDL_free(As);
   }
 }

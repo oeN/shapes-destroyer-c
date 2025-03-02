@@ -52,10 +52,10 @@ void Wayne_init(wayne_t *self, u64 msFromStart) {
   /**/
 
   // UPDATE
-  // FIXME: the Audio is wrong make an effort to understand it, because right
-  // now is junk code copy pasted from different sources
   //
-  // Wayne_addSystem(self,WAYNE_UPDATE, generateAudio);
+  Wayne_addSystem(self, WAYNE_INIT,
+                  generateAudio); // make a pass in the init too
+  Wayne_addSystem(self, WAYNE_UPDATE, generateAudio);
   //
   // Wayne_addSystem(self, WAYNE_UPDATE,moveSystem);
 
