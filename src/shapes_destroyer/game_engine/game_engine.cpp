@@ -39,7 +39,46 @@ void loopThroughSystems(wayne_t *self, wayne_loop_stage stage) {
   }
 }
 
-void Wayne_init(wayne_t *self, u64 msFromStart) {
+int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
+                    system_callback systemCallback) {
+  if (!self->Systems)
+    return 0;
+
+  system_t *System = pushStruct(self->mainArena, system_t);
+  System->gameLoopStage = stage;
+  System->callback = systemCallback;
+  self->Systems[self->SystemsCount++] = System;
+
+  return 1;
+}
+
+wayne_controller_input Wayne_getController(wayne_t *GameEngine,
+                                           int ControllerIndex) {
+  Assert(ControllerIndex < ArrayCount(GameEngine->Controllers));
+  return GameEngine->Controllers[ControllerIndex];
+}
+
+extern "C" WAYNE_BOOTSTRAP(Wayne_bootstrap) {
+  memory_arena *mainArena = bootstrapArena(mainArenaSize);
+
+  wayne_t *gameEngine = pushStruct(mainArena, wayne_t);
+  gameEngine->mainArena = mainArena;
+  gameEngine->BackBuffer = pushStruct(mainArena, game_offscreen_buffer);
+  gameEngine->entityManager = pushStruct(mainArena, entity_manager);
+  EntityManager_init(gameEngine->entityManager);
+  // FIXME: do we need this?
+  gameEngine->entityManager->gameArena = mainArena;
+
+  gameEngine->frameContext = pushStruct(mainArena, frame_context);
+  gameEngine->frameContext->frameArena = bootstrapArena(Kilobytes(500));
+  gameEngine->SystemsCount = 0;
+  // TODO: find a solution to the limited number of systems
+  gameEngine->Systems = pushSizeTimes(gameEngine->mainArena, system_t *, 10);
+
+  return gameEngine;
+}
+
+extern "C" WAYNE_INIT(Wayne_init) {
   self->msFromStart = msFromStart;
   // This is temporary usually the systems area added by an external piece of
   // code this file should contain only the basic pieces of the engine
@@ -78,8 +117,7 @@ void Wayne_init(wayne_t *self, u64 msFromStart) {
   Wayne_postFrame(self);
 }
 
-void Wayne_updateAndRender(wayne_t *self, u64 msFromStart,
-                           wayne_controller_input *Controllers) {
+extern "C" WAYNE_UPDATE_AND_RENDER(Wayne_updateAndRender) {
   self->msFromStart = msFromStart;
   // FIXME: I feel there is a better way to do this but I might be wrong check
   // it
@@ -94,50 +132,11 @@ void Wayne_updateAndRender(wayne_t *self, u64 msFromStart,
   loopThroughSystems(self, WAYNE_RENDER);
 }
 
-void Wayne_destroy(wayne_t *self) {
+extern "C" WAYNE_DESTROY(Wayne_destroy) {
   // even if the frame arena is inside the frameContext that it's inside the
   // game engine struct itself we've bootstrapped a diffeerent arena for the
   // frameContext and we've to free it
   freeArena(self->frameContext->frameArena);
   // the game engine itself is inside the mainArena so we can just free that
   freeArena(self->mainArena);
-}
-
-int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
-                    system_callback systemCallback) {
-  if (!self->Systems)
-    return 0;
-
-  system_t *System = pushStruct(self->mainArena, system_t);
-  System->gameLoopStage = stage;
-  System->callback = systemCallback;
-  self->Systems[self->SystemsCount++] = System;
-
-  return 1;
-}
-
-wayne_t *bootstrapWayne(memory_size mainArenaSize) {
-  memory_arena *mainArena = bootstrapArena(mainArenaSize);
-
-  wayne_t *gameEngine = pushStruct(mainArena, wayne_t);
-  gameEngine->mainArena = mainArena;
-  gameEngine->BackBuffer = pushStruct(mainArena, game_offscreen_buffer);
-  gameEngine->entityManager = pushStruct(mainArena, entity_manager);
-  EntityManager_init(gameEngine->entityManager);
-  // FIXME: do we need this?
-  gameEngine->entityManager->gameArena = mainArena;
-
-  gameEngine->frameContext = pushStruct(mainArena, frame_context);
-  gameEngine->frameContext->frameArena = bootstrapArena(Kilobytes(500));
-  gameEngine->SystemsCount = 0;
-  // TODO: find a solution to the limited number of systems
-  gameEngine->Systems = pushSizeTimes(gameEngine->mainArena, system_t *, 10);
-
-  return gameEngine;
-}
-
-wayne_controller_input Wayne_getController(wayne_t *GameEngine,
-                                           int ControllerIndex) {
-  Assert(ControllerIndex < ArrayCount(GameEngine->Controllers));
-  return GameEngine->Controllers[ControllerIndex];
 }

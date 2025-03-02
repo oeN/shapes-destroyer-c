@@ -1,4 +1,5 @@
 #pragma once
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -32,3 +33,19 @@ struct Node {
   linked_list_node *next;
   void *value;
 };
+
+typedef struct GameContext game_context;
+
+typedef union Vec2 {
+  struct {
+    float x, y;
+  };
+  float v[2];
+} vec2;
+
+typedef union Vec4 {
+  struct {
+    float r, g, b, a;
+  };
+  float v[4];
+} vec4;

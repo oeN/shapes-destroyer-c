@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../base_types.h"
+#include "../types.h"
 
 typedef struct GameOffscreenBuffer {
   void *Memory;

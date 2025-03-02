@@ -1,5 +1,4 @@
 #pragma once
-#include <stddef.h>
 
 // simple macro to assert things during development
 // this shouldn't be used in production
@@ -16,5 +15,4 @@
 #define ArraySize(Array) ArrayCount(Array)
 
 unsigned long hash(unsigned char *str);
-void increaseArray(void **array, size_t elementSize, int *currentSize);
 int randomClamped(int min, int max);

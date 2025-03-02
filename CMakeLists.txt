@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.30 FATAL_ERROR)
 set(CMAKE_C_COMPILER "clang")
 set(CMAKE_CXX_COMPILER "clang++")
+cmake_minimum_required(VERSION 3.30 FATAL_ERROR)
 
 project(main)
 
@@ -23,5 +23,7 @@ CPMAddPackage("gh:libsdl-org/SDL#release-3.2.4")
 list(APPEND LIBS SDL3::SDL3)
 
 target_link_libraries(${PROJECT_NAME} ${LIBS})
+
+add_subdirectory("src/shapes_destroyer")
 
 # add_subdirectory(tests)

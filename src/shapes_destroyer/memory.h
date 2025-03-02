@@ -1,8 +1,6 @@
 #pragma once
 
-#include <string.h>
-
-#include "base_types.h"
+#include "types.h"
 
 typedef struct MemoryArena {
   memory_size totalSize;
@@ -11,12 +9,12 @@ typedef struct MemoryArena {
 } memory_arena;
 
 #define Kilobytes(n) 1024 * n
-#define Megabytes(n) 1024 * 1024 * n
+#define Megabytes(n) Kilobytes(n) * 1024
 
 #define pushStruct(Arena, type) (type *)_pushSize(Arena, sizeof(type))
-#define pushString(Arena, string) \
+#define pushString(Arena, string)                                              \
   (char *)_pushSize(Arena, sizeof(char) * strlen(string))
-#define pushSizeTimes(Arena, type, times) \
+#define pushSizeTimes(Arena, type, times)                                      \
   (type *)_pushSize(Arena, sizeof(type) * times)
 #define getNodeValue(Node, type) (type *)_getNodeValue(Node)
 

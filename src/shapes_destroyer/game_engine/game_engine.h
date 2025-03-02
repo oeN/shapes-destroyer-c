@@ -35,17 +35,30 @@ struct GameEngine {
   system_t **Systems;
 };
 
-wayne_t *bootstrapWayne(memory_size mainArenaSize);
+// FIXME: the bootstrap should take in the allocated memory itself and shouldn't
+// do the allocation, that part must be done on the platform layer
+// TODO: check if we still need the bootstrap after that
+#define WAYNE_BOOTSTRAP(name) wayne_t *(name)(memory_size mainArenaSize)
+typedef WAYNE_BOOTSTRAP(wayne_bootstrap);
+WAYNE_BOOTSTRAP(Wayne_bootsrapStub) { return NULL; }
+
+#define WAYNE_UPDATE_AND_RENDER(name)                                          \
+  void(name)(wayne_t * self, u64 msFromStart,                                  \
+             wayne_controller_input Controllers[MAX_N_CONTROLLERS])
+typedef WAYNE_UPDATE_AND_RENDER(wayne_update_and_render);
+WAYNE_UPDATE_AND_RENDER(Wayne_updateAndRenderStub) {}
+
+#define WAYNE_INIT(name) void(name)(wayne_t * self, u64 msFromStart)
+typedef WAYNE_INIT(wayne_init);
+WAYNE_INIT(Wayne_initStub) {}
+
+#define WAYNE_DESTROY(name) void(name)(wayne_t * self)
+typedef WAYNE_DESTROY(wayne_destroy);
+WAYNE_DESTROY(Wayne_destroyStub) {}
 
 void Wayne_preFrame(wayne_t *self);
 void Wayne_postFrame(wayne_t *self);
 
-void Wayne_init(wayne_t *self, u64 msFromStart);
-void Wayne_updateAndRender(
-    wayne_t *self, u64 msFromStart,
-    wayne_controller_input Controllers[MAX_N_CONTROLLERS]);
-
-void Wayne_destroy(wayne_t *self);
 int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
                     system_callback systemCallback);
 wayne_controller_input Wayne_getController(wayne_t *GameEngine,

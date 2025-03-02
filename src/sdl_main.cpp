@@ -1,3 +1,4 @@
+#include <SDL3/SDL_loadso.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -5,19 +6,13 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
-#include "base.cpp"
+#include "shapes_destroyer/base.h"
 
 #define Assert(Expression) SDL_assert(Expression)
 
-#include "base_types.h"
-#include "constants.h"
-#include "ecs/init.cpp"
-#include "game_engine/game_engine.h"
-#include "game_engine/init.cpp"
-#include "game_engine/types.h"
-#include "memory.cpp"
-#include "memory.h"
-#include "mymath.cpp"
+#include "shapes_destroyer/constants.h"
+#include "shapes_destroyer/game_engine/game_engine.h"
+#include "shapes_destroyer/types.h"
 
 typedef struct sdl_offscreen_buffer {
   SDL_Texture *Texture;
@@ -44,7 +39,21 @@ typedef struct app_state {
   SDL_AudioStream *AudioStream;
   wayne_audio_buffer AudioBuffer;
   sdl_controllers_mapping Controllers;
+  bool AudioIsPaused;
 } app_state;
+
+struct game_code {
+  SDL_SharedObject *CodeHandle;
+
+  wayne_bootstrap *Bootstrap;
+  wayne_init *Init;
+  wayne_update_and_render *UpdateAndRender;
+  wayne_destroy *Destroy;
+
+  bool IsValid;
+};
+
+global_variable game_code GameCode;
 
 #define MyInitFlags SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK
 
@@ -71,8 +80,8 @@ internal void MySDL_ResizeTexture(sdl_offscreen_buffer *Buffer,
   // TODO: handle the fail case
   Assert(Buffer->Texture);
 
-  int BitmapMemorySize = (Buffer->Width * Buffer->Height) * BytesPerPixel;
-  Buffer->Memory = SDL_malloc(BitmapMemorySize);
+  int NumberOfPixels = Buffer->Width * Buffer->Height;
+  Buffer->Memory = SDL_calloc(NumberOfPixels, BytesPerPixel);
   Buffer->Pitch = Width * BytesPerPixel;
 }
 
@@ -123,6 +132,38 @@ SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
                                    &As->Window, &As->Renderer))
     return SDL_APP_FAILURE;
 
+  // TODO: fix the output of the game code as library
+  GameCode.CodeHandle =
+      SDL_LoadObject("build/src/shapes_destroyer/libshapes_destroyer.dylib");
+
+  if (!GameCode.CodeHandle)
+    SDL_Log("Cannot load the game code %s", SDL_GetError());
+
+  GameCode.Bootstrap = (wayne_bootstrap *)SDL_LoadFunction(GameCode.CodeHandle,
+                                                           "Wayne_bootstrap");
+  GameCode.Init =
+      (wayne_init *)SDL_LoadFunction(GameCode.CodeHandle, "Wayne_init");
+  GameCode.UpdateAndRender = (wayne_update_and_render *)SDL_LoadFunction(
+      GameCode.CodeHandle, "Wayne_updateAndRender");
+  GameCode.Destroy =
+      (wayne_destroy *)SDL_LoadFunction(GameCode.CodeHandle, "Wayne_destroy");
+
+  if (GameCode.Bootstrap && GameCode.Init && GameCode.UpdateAndRender &&
+      GameCode.Destroy)
+    GameCode.IsValid = true;
+
+  if (!GameCode.IsValid) {
+
+    GameCode.Bootstrap = Wayne_bootsrapStub;
+    GameCode.Init = Wayne_initStub;
+    GameCode.UpdateAndRender = Wayne_updateAndRenderStub;
+    GameCode.Destroy = Wayne_destroyStub;
+
+    SDL_Log("Cannot load the game code %s", SDL_GetError());
+    // we don't need to return anything because the code should work with the
+    // stub and in the future will hot reload the code anyway
+  }
+
   {
     // TODO: extract me somewhere
     wayne_audio_buffer *Buffer = &As->AudioBuffer;
@@ -135,14 +176,17 @@ SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
     Buffer->BufferSize = Buffer->BytesPerSample * Buffer->SamplesPerSecond;
     Buffer->WavePeriod = Buffer->SamplesPerSecond / Buffer->ToneHz;
 
-    Buffer->Data = SDL_malloc(Buffer->BufferSize);
+    Buffer->Data = SDL_calloc(1, Buffer->BufferSize);
   }
   if (!As->AudioBuffer.Data) {
     SDL_Log("Cannot initialize audio buffer %s", SDL_GetError());
     return SDL_APP_FAILURE;
   }
 
-  As->GameEngine = bootstrapWayne(Megabytes(10));
+  if (!MySDL_InitSoundBuffer(&As->AudioBuffer, &As->AudioStream))
+    return SDL_APP_FAILURE;
+
+  As->GameEngine = GameCode.Bootstrap(Megabytes(10));
   if (!As->GameEngine)
     return SDL_APP_FAILURE;
 
@@ -154,16 +198,12 @@ SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
   As->GameEngine->BackBuffer->Memory = As->BackBuffer.Memory;
   As->GameEngine->BackBuffer->Pitch = As->BackBuffer.Pitch;
 
-  Wayne_init(As->GameEngine, SDL_GetTicks());
-
-  // can we avoid the crackling sound by initializing the audio stream after the
-  // audio buffer has been filled with some data?
-  if (!MySDL_InitSoundBuffer(&As->AudioBuffer, &As->AudioStream))
-    return SDL_APP_FAILURE;
+  GameCode.Init(As->GameEngine, SDL_GetTicks());
 
   MySDL_FillSoundBuffer(As->AudioStream, &As->AudioBuffer);
   // resume the audio stream once is filled
   SDL_ResumeAudioStreamDevice(As->AudioStream);
+  As->AudioIsPaused = false;
 
   // init the keyboard controller that for now is always active
   wayne_controller_input DefaultController = {0};
@@ -181,7 +221,8 @@ void SetButtonState(SDL_Event *Event, wayne_controller_button *Button) {
 }
 
 SDL_AppResult MySDL_HandleKeyEvent(SDL_Event *Event,
-                                   sdl_controllers_mapping *Controllers) {
+                                   sdl_controllers_mapping *Controllers,
+                                   app_state *AppState) {
   wayne_controller_input *Keyboard = &Controllers->Controllers[0];
 
   switch (Event->key.scancode) {
@@ -203,6 +244,22 @@ SDL_AppResult MySDL_HandleKeyEvent(SDL_Event *Event,
 
   case SDL_SCANCODE_D: {
     SetButtonState(Event, &Keyboard->MoveRight);
+  } break;
+
+  case SDL_SCANCODE_P: {
+    // ignore repeated keys
+    if (Event->key.repeat > 0)
+      break;
+
+    if (!Event->key.down)
+      break;
+
+    if (AppState->AudioIsPaused) {
+      SDL_ResumeAudioStreamDevice(AppState->AudioStream);
+    } else {
+      SDL_PauseAudioStreamDevice(AppState->AudioStream);
+    }
+    AppState->AudioIsPaused = !AppState->AudioIsPaused;
   } break;
 
   default: {
@@ -335,7 +392,7 @@ SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event) {
 
   case SDL_EVENT_KEY_DOWN:
   case SDL_EVENT_KEY_UP:
-    return MySDL_HandleKeyEvent(Event, &As->Controllers);
+    return MySDL_HandleKeyEvent(Event, &As->Controllers, As);
   }
   return SDL_APP_CONTINUE;
 }
@@ -353,7 +410,7 @@ SDL_AppResult SDL_AppIterate(void *AppState) {
   app_state *As = (app_state *)AppState;
   const Uint64 Now = SDL_GetTicks();
 
-  Wayne_updateAndRender(As->GameEngine, Now, As->Controllers.Controllers);
+  GameCode.UpdateAndRender(As->GameEngine, Now, As->Controllers.Controllers);
 
   MySDL_FillSoundBuffer(As->AudioStream, &As->AudioBuffer);
   MySDL_UpdateWindow(As->Window, As->Renderer, &As->BackBuffer);
@@ -374,7 +431,7 @@ void SDL_AppQuit(void *AppState, SDL_AppResult Result) {
   if (AppState != NULL) {
     app_state *As = (app_state *)AppState;
     SDL_PauseAudioStreamDevice(As->AudioStream);
-    Wayne_destroy(As->GameEngine);
+    GameCode.Destroy(As->GameEngine);
     SDL_free(As->AudioBuffer.Data);
     SDL_free(As);
   }
