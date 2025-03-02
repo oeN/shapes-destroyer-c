@@ -73,16 +73,16 @@ void renderWeirdGradient(system_params *params) {
     GreenOffset += MaxAccelleration * Controller.StickX;
     BlueOffset += MaxAccelleration * Controller.StickY;
 
-    if (Controller.ButtonSouth.isDown)
+    if (Controller.ButtonSouth.isDown || Controller.MoveDown.isDown)
       GreenOffset += 2;
 
-    if (Controller.ButtonNorth.isDown)
+    if (Controller.ButtonNorth.isDown || Controller.MoveUp.isDown)
       GreenOffset -= 2;
 
-    if (Controller.ButtonEast.isDown)
+    if (Controller.ButtonEast.isDown || Controller.MoveRight.isDown)
       BlueOffset += 2;
 
-    if (Controller.ButtonWest.isDown)
+    if (Controller.ButtonWest.isDown || Controller.MoveLeft.isDown)
       BlueOffset -= 2;
   }
 

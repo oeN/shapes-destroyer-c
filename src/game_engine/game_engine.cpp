@@ -52,8 +52,13 @@ void Wayne_init(wayne_t *self, u64 msFromStart) {
   /**/
 
   // UPDATE
-  // Wayne_addSystem(self, WAYNE_UPDATE, generateAudio);
-  // GameEngine_addSystem(self, WAYNE_UPDATE, moveSystem);
+  // FIXME: the Audio is wrong make an effort to understand it, because right
+  // now is junk code copy pasted from different sources
+  //
+  // Wayne_addSystem(self,WAYNE_UPDATE, generateAudio);
+  //
+  // Wayne_addSystem(self, WAYNE_UPDATE,moveSystem);
+
   /*GameEngine_addSystem(self, GAME_ENGINE_UPDATE, keepInBoundsSystem);*/
 
   // RENDER

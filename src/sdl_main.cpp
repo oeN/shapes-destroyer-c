@@ -46,7 +46,6 @@ typedef struct app_state {
   sdl_controllers_mapping Controllers;
 } app_state;
 
-
 #define MyInitFlags SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK
 
 // TODO: do not use globals if not necessary, remove the one that arent;
@@ -71,13 +70,14 @@ internal void MySDL_ResizeTexture(sdl_offscreen_buffer *Buffer,
                         SDL_TEXTUREACCESS_STREAMING, Width, Height);
   // TODO: handle the fail case
   Assert(Buffer->Texture);
-  
+
   int BitmapMemorySize = (Buffer->Width * Buffer->Height) * BytesPerPixel;
   Buffer->Memory = SDL_malloc(BitmapMemorySize);
   Buffer->Pitch = Width * BytesPerPixel;
 }
 
-internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer, SDL_AudioStream **OutAudioStream) {
+internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer,
+                                   SDL_AudioStream **OutAudioStream) {
   // temporary solution, it should be done outside of here
   Buffer->SamplesPerSecond = 48000;
   Buffer->ToneHz = 260;
@@ -101,8 +101,8 @@ internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer, SDL_AudioStream *
   }
 
   // create an audio stream
-  *OutAudioStream = SDL_OpenAudioDeviceStream(
-      SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &Spec, NULL, NULL);
+  *OutAudioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                                              &Spec, NULL, NULL);
   if (!*OutAudioStream) {
     SDL_Log("Failed to create audio stream: %s", SDL_GetError());
     return 0;
@@ -115,7 +115,8 @@ internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer, SDL_AudioStream *
   return 1;
 }
 
-internal void MySDL_FillSoundBuffer(SDL_AudioStream *AudioStream, wayne_audio_buffer *Buffer) {
+internal void MySDL_FillSoundBuffer(SDL_AudioStream *AudioStream,
+                                    wayne_audio_buffer *Buffer) {
   SDL_PutAudioStreamData(AudioStream, Buffer->Data, Buffer->BufferSize);
 }
 
@@ -162,15 +163,36 @@ SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
   return SDL_APP_CONTINUE;
 }
 
-SDL_AppResult handle_key_event(SDL_Event *Event) {
-  // for now ignore repeated keys
-  if (Event->key.repeat > 0)
-    return SDL_APP_CONTINUE;
+void SetButtonState(SDL_Event *Event, wayne_controller_button *Button) {
+  Button->HalfTransitionCount = Event->key.repeat;
+  Button->isDown = Event->key.down;
+}
+
+SDL_AppResult MySDL_HandleKeyEvent(SDL_Event *Event,
+                                   sdl_controllers_mapping *Controllers) {
+  wayne_controller_input *Keyboard = &Controllers->Controllers[0];
 
   switch (Event->key.scancode) {
   case SDL_SCANCODE_Q:
   case SDL_SCANCODE_ESCAPE:
     return SDL_APP_SUCCESS;
+
+  case SDL_SCANCODE_W: {
+    SetButtonState(Event, &Keyboard->MoveUp);
+  } break;
+
+  case SDL_SCANCODE_S: {
+    SetButtonState(Event, &Keyboard->MoveDown);
+  } break;
+
+  case SDL_SCANCODE_A: {
+    SetButtonState(Event, &Keyboard->MoveLeft);
+  } break;
+
+  case SDL_SCANCODE_D: {
+    SetButtonState(Event, &Keyboard->MoveRight);
+  } break;
+
   default: {
     break;
   }
@@ -237,18 +259,22 @@ void MySDL_HandleButtonEvent(SDL_Event *Event,
 
   switch (Event->jbutton.button) {
   case 0: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
     CurrentController->ButtonSouth.isDown = Event->jbutton.down;
   } break;
 
   case 1: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
     CurrentController->ButtonEast.isDown = Event->jbutton.down;
   } break;
 
   case 2: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
     CurrentController->ButtonWest.isDown = Event->jbutton.down;
   } break;
 
   case 3: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
     CurrentController->ButtonNorth.isDown = Event->jbutton.down;
   } break;
   }
@@ -297,7 +323,7 @@ SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event) {
 
   case SDL_EVENT_KEY_DOWN:
   case SDL_EVENT_KEY_UP:
-    return handle_key_event(Event);
+    return MySDL_HandleKeyEvent(Event, &As->Controllers);
   }
   return SDL_APP_CONTINUE;
 }
@@ -319,6 +345,15 @@ SDL_AppResult SDL_AppIterate(void *AppState) {
 
   MySDL_FillSoundBuffer(As->AudioStream, &As->AudioBuffer);
   MySDL_UpdateWindow(As->Window, As->Renderer, &As->BackBuffer);
+
+  for (int i = 0; i < As->Controllers.ControllersCount; i++) {
+    // reset the half transitions count
+    wayne_controller_input *Controller = &As->Controllers.Controllers[i];
+    for (int ButtonIndex = 0; ButtonIndex < ArraySize(Controller->Buttons);
+         ButtonIndex++) {
+      Controller->Buttons[ButtonIndex].HalfTransitionCount = 0;
+    }
+  }
 
   return SDL_APP_CONTINUE;
 }

@@ -13,6 +13,7 @@
   }
 
 #define ArrayCount(Array) sizeof(Array) / sizeof(Array[0])
+#define ArraySize(Array) ArrayCount(Array)
 
 unsigned long hash(unsigned char *str);
 void increaseArray(void **array, size_t elementSize, int *currentSize);

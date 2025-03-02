@@ -48,7 +48,7 @@ struct wayne_controller_input {
     wayne_controller_button Buttons[12];
     struct {
       wayne_controller_button MoveUp;
-      wayne_controller_button MoveRigth;
+      wayne_controller_button MoveRight;
       wayne_controller_button MoveDown;
       wayne_controller_button MoveLeft;
 
