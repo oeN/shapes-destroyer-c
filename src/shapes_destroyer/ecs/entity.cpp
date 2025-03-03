@@ -4,6 +4,7 @@
 
 void EntityManager_init(entity_manager *self) {
   self->totalEntities = 0;
+  // FIXME: it should be doable with self->entitiesByTag = {};
   for (int i = 0; i < 10; i++) {
     self->entitiesByTag[i] = (entities_by_tag){0};
     // there are problems while increasing array with the current memory

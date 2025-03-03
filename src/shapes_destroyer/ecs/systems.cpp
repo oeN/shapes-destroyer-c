@@ -54,9 +54,10 @@ void spawnEntities(system_params *params) {
 
 void renderWeirdGradient(system_params *params) {
   game_offscreen_buffer *Buffer = params->backBuffer;
+  game_state *GameState = Wayne_GetGameState(params->GameEngine);
 
-  local_persist uint16 BlueOffset = 0;
-  local_persist uint16 GreenOffset = 0;
+  uint16 BlueOffset = GameState->BlueOffset;
+  uint16 GreenOffset = GameState->GreenOffset;
 
   uint8 MaxAccelleration = 5;
 
@@ -102,6 +103,9 @@ void renderWeirdGradient(system_params *params) {
 
     Row += Buffer->Pitch;
   }
+
+  GameState->BlueOffset = BlueOffset;
+  GameState->GreenOffset = GreenOffset;
 }
 
 void renderPlayerSystem(system_params *params) {

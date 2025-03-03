@@ -22,13 +22,21 @@ typedef struct frame_context {
   memory_arena *frameArena;
 } frame_context;
 
+struct game_state {
+  u16 BlueOffset;
+  u16 GreenOffset;
+};
+
 struct GameEngine {
   u64 msFromStart;
-  memory_arena *mainArena;
+  memory_arena *PermanentStorage;
+  memory_arena *TransientStorage;
   entity_manager *entityManager;
   frame_context *frameContext;
   game_offscreen_buffer *BackBuffer;
   wayne_audio_buffer *AudioBuffer;
+  game_state *GameState;
+
   wayne_controller_input Controllers[MAX_N_CONTROLLERS];
 
   u8 SystemsCount;
@@ -38,7 +46,9 @@ struct GameEngine {
 // FIXME: the bootstrap should take in the allocated memory itself and shouldn't
 // do the allocation, that part must be done on the platform layer
 // TODO: check if we still need the bootstrap after that
-#define WAYNE_BOOTSTRAP(name) wayne_t *(name)(memory_size mainArenaSize)
+#define WAYNE_BOOTSTRAP(name)                                                  \
+  wayne_t *(name)(memory_arena * PermanentStorage,                             \
+                  memory_arena * TransientStorage)
 typedef WAYNE_BOOTSTRAP(wayne_bootstrap);
 WAYNE_BOOTSTRAP(Wayne_bootsrapStub) { return NULL; }
 
@@ -63,3 +73,6 @@ int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
                     system_callback systemCallback);
 wayne_controller_input Wayne_getController(wayne_t *GameEngine,
                                            int ControllerIndex);
+
+game_state *Wayne_GetGameState(void *GameEngine);
+game_state *Wayne_GetGameState(wayne_t *GameEngine);

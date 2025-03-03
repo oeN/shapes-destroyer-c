@@ -8,7 +8,7 @@
 void printDebugInfo(wayne_t *gameEngine) {
   printf("------ START UPDATE -----\n");
   printf("Game Engine %p\n", &gameEngine);
-  printf("Arena %p\n", &gameEngine->mainArena);
+  printf("Arena %p\n", &gameEngine->PermanentStorage);
   printf("Systems %p - count %d\n", &gameEngine->Systems,
          gameEngine->SystemsCount);
   printf("------ END UPDATE -----\n");
@@ -16,7 +16,6 @@ void printDebugInfo(wayne_t *gameEngine) {
 
 void Wayne_preFrame(wayne_t *self) {
   frame_context *ctx = self->frameContext;
-  resetArena(ctx->frameArena, false);
 
   ctx->systemParams = pushStruct(ctx->frameArena, system_params);
   ctx->systemParams->GameEngine = self;
@@ -44,12 +43,20 @@ int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
   if (!self->Systems)
     return 0;
 
-  system_t *System = pushStruct(self->mainArena, system_t);
+  system_t *System = pushStruct(self->PermanentStorage, system_t);
   System->gameLoopStage = stage;
   System->callback = systemCallback;
   self->Systems[self->SystemsCount++] = System;
 
   return 1;
+}
+
+game_state *Wayne_GetGameState(void *GameEngine) {
+  return Wayne_GetGameState((wayne_t *)GameEngine);
+}
+
+game_state *Wayne_GetGameState(wayne_t *GameEngine) {
+  return GameEngine->GameState;
 }
 
 wayne_controller_input Wayne_getController(wayne_t *GameEngine,
@@ -59,21 +66,23 @@ wayne_controller_input Wayne_getController(wayne_t *GameEngine,
 }
 
 extern "C" WAYNE_BOOTSTRAP(Wayne_bootstrap) {
-  memory_arena *mainArena = bootstrapArena(mainArenaSize);
-
-  wayne_t *gameEngine = pushStruct(mainArena, wayne_t);
-  gameEngine->mainArena = mainArena;
-  gameEngine->BackBuffer = pushStruct(mainArena, game_offscreen_buffer);
-  gameEngine->entityManager = pushStruct(mainArena, entity_manager);
+  wayne_t *gameEngine = pushStruct(PermanentStorage, wayne_t);
+  gameEngine->PermanentStorage = PermanentStorage;
+  gameEngine->BackBuffer = pushStruct(PermanentStorage, game_offscreen_buffer);
+  gameEngine->GameState = pushStruct(PermanentStorage, game_state);
+  gameEngine->entityManager = pushStruct(PermanentStorage, entity_manager);
   EntityManager_init(gameEngine->entityManager);
   // FIXME: do we need this?
-  gameEngine->entityManager->gameArena = mainArena;
+  gameEngine->entityManager->gameArena = PermanentStorage;
 
-  gameEngine->frameContext = pushStruct(mainArena, frame_context);
-  gameEngine->frameContext->frameArena = bootstrapArena(Kilobytes(500));
+  gameEngine->frameContext = pushStruct(PermanentStorage, frame_context);
+  gameEngine->frameContext->frameArena = TransientStorage;
   gameEngine->SystemsCount = 0;
+
   // TODO: find a solution to the limited number of systems
-  gameEngine->Systems = pushSizeTimes(gameEngine->mainArena, system_t *, 10);
+  u8 MaxNumberOfSystems = 10;
+  gameEngine->Systems = pushSizeTimes(gameEngine->PermanentStorage, system_t *,
+                                      MaxNumberOfSystems);
 
   return gameEngine;
 }
@@ -92,16 +101,16 @@ extern "C" WAYNE_INIT(Wayne_init) {
 
   // UPDATE
   //
-  Wayne_addSystem(self, WAYNE_INIT,
-                  generateAudio); // make a pass in the init too
-  Wayne_addSystem(self, WAYNE_UPDATE, generateAudio);
+  // Wayne_addSystem(self, WAYNE_INIT,
+  //                generateAudio); // make a pass in the init too
+  // Wayne_addSystem(self, WAYNE_UPDATE, generateAudio);
   //
   // Wayne_addSystem(self, WAYNE_UPDATE,moveSystem);
 
   /*GameEngine_addSystem(self, GAME_ENGINE_UPDATE, keepInBoundsSystem);*/
 
   // RENDER
-  Wayne_addSystem(self, WAYNE_RENDER, renderWeirdGradient);
+  // Wayne_addSystem(self, WAYNE_RENDER, renderWeirdGradient);
   /*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderShapeSystem);*/
   /*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderPlayerSystem);*/
 
@@ -113,7 +122,10 @@ extern "C" WAYNE_INIT(Wayne_init) {
   // FIXME: later when you're almost done with the project check if there is a
   // better way to handle this
   Wayne_preFrame(self);
-  loopThroughSystems(self, WAYNE_INIT);
+
+  //  loopThroughSystems(self, WAYNE_INIT);
+  generateAudio(self->frameContext->systemParams);
+
   Wayne_postFrame(self);
 }
 
@@ -125,18 +137,22 @@ extern "C" WAYNE_UPDATE_AND_RENDER(Wayne_updateAndRender) {
        ControllerIndex++) {
     self->Controllers[ControllerIndex] = Controllers[ControllerIndex];
   }
-  loopThroughSystems(self, WAYNE_INPUT);
+
+  // loopThroughSystems(self, WAYNE_INPUT);
+
   // TODO: calc and use delta Time or run the update enough to keep the
   // framerate stable
-  loopThroughSystems(self, WAYNE_UPDATE);
-  loopThroughSystems(self, WAYNE_RENDER);
+  // loopThroughSystems(self, WAYNE_UPDATE);
+  // loopThroughSystems(self, WAYNE_RENDER);
+
+  // temporary test to assure a thing about hot reload
+  Wayne_preFrame(self);
+  renderWeirdGradient(self->frameContext->systemParams);
+  Wayne_postFrame(self);
 }
 
 extern "C" WAYNE_DESTROY(Wayne_destroy) {
-  // even if the frame arena is inside the frameContext that it's inside the
-  // game engine struct itself we've bootstrapped a diffeerent arena for the
-  // frameContext and we've to free it
-  freeArena(self->frameContext->frameArena);
-  // the game engine itself is inside the mainArena so we can just free that
-  freeArena(self->mainArena);
+  // TODO: check if this is still nedeed since we've moved the memory handling
+  // part in the platform layer for now this function does nothing, maybe in the
+  // future it will be needed but for now could be deleted to simplify the code
 }

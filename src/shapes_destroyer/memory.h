@@ -10,6 +10,7 @@ typedef struct MemoryArena {
 
 #define Kilobytes(n) 1024 * n
 #define Megabytes(n) Kilobytes(n) * 1024
+#define Gigabytes(n) (u64) Megabytes(n) * (u64)1024
 
 #define pushStruct(Arena, type) (type *)_pushSize(Arena, sizeof(type))
 #define pushString(Arena, string)                                              \
