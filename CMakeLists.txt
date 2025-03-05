@@ -25,5 +25,6 @@ list(APPEND LIBS SDL3::SDL3)
 target_link_libraries(${PROJECT_NAME} ${LIBS})
 
 add_subdirectory("src/shapes_destroyer")
+add_subdirectory("src/my_handmade_hero")
 
 # add_subdirectory(tests)

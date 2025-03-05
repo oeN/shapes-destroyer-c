@@ -15,6 +15,12 @@ void addToVec2(vec2 *lhs, const vec2 *rhs) {
   lhs->y += rhs->y;
 }
 
+vec2 addTwoVec2(const vec2 lhs, const vec2 rhs) {
+  vec2 result = lhs;
+  addToVec2(&result, &rhs);
+  return result;
+}
+
 void extendVec2(vec2 *lhs, float distance) {
   lhs->x *= distance;
   lhs->y *= distance;

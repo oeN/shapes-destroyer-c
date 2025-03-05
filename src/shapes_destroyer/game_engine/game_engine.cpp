@@ -1,9 +1,33 @@
 #include "./game_engine.h"
-
 #include <stdio.h>
 
-#include "../base.h"
-#include "../memory.h"
+#include "../../base.h"
+#include "../../memory.h"
+#include "../../mymath.h"
+
+void DrawRectangle(wayne_offscreen_buffer *Buffer, vec2 Position,
+                   vec2 Dimensions, u32 Color) {
+
+  vec2 Max = Position + Dimensions;
+
+  i32 MinX = (i32)Clamp(f32, Position.x, 0, Buffer->Width);
+  i32 MinY = (i32)Clamp(f32, Position.y, 0, Buffer->Height);
+  i32 MaxX = (i32)Clamp(f32, Max.x, 0, Buffer->Width);
+  i32 MaxY = (i32)Clamp(f32, Max.y, 0, Buffer->Height);
+
+  uint8 *Row = ((uint8 *)Buffer->Memory + Buffer->Pitch * MinY +
+                Buffer->BytesPerPixel * MinX);
+
+  for (int Y = MinY; Y < MaxY; ++Y) {
+    uint32 *Pixel = (uint32 *)Row;
+
+    for (int X = MinX; X < MaxX; ++X) {
+      *Pixel++ = Color;
+    }
+
+    Row += Buffer->Pitch;
+  }
+}
 
 void printDebugInfo(wayne_t *gameEngine) {
   printf("------ START UPDATE -----\n");
@@ -29,12 +53,12 @@ void Wayne_postFrame(wayne_t *self) {}
 
 void loopThroughSystems(wayne_t *self, wayne_loop_stage stage) {
   for (int i = 0; i < self->SystemsCount; i++) {
-    system_t *s = self->Systems[i];
+    system_t s = self->Systems[i];
     // find a better way to do this
-    if (s->gameLoopStage != stage)
+    if (s.gameLoopStage != stage)
       continue;
 
-    s->callback(self->frameContext->systemParams);
+    s.callback(self->frameContext->systemParams);
   }
 }
 
@@ -43,9 +67,9 @@ int Wayne_addSystem(wayne_t *self, wayne_loop_stage stage,
   if (!self->Systems)
     return 0;
 
-  system_t *System = pushStruct(self->PermanentStorage, system_t);
-  System->gameLoopStage = stage;
-  System->callback = systemCallback;
+  system_t System = {0};
+  System.gameLoopStage = stage;
+  System.callback = systemCallback;
   self->Systems[self->SystemsCount++] = System;
 
   return 1;
@@ -65,10 +89,25 @@ wayne_controller_input Wayne_getController(wayne_t *GameEngine,
   return GameEngine->Controllers[ControllerIndex];
 }
 
+extern "C" WAYNE_RESET_SYSTEMS(Wayne_ResetSystems) {
+#if USE_ECS_SYSTEMS
+  // this is my temporary fix to the function pointers problem on the hot reload
+  // feature I don't feel like is a good solution but it works for now and I'm
+  // willing to keep it because it should make my life easier progressing
+  // through the game and I can fix it later if I need to
+  wayne_t *self = (wayne_t *)PermanentStorage->startAddress;
+  self->SystemsCount = 0;
+
+  Wayne_addSystem(self, WAYNE_RENDER, renderWeirdGradient);
+#endif
+}
+
 extern "C" WAYNE_BOOTSTRAP(Wayne_bootstrap) {
+  // 2025-03-04: right now it seems that I don't know how to this stuff
+  // differently so for now I'll leave it as it is
   wayne_t *gameEngine = pushStruct(PermanentStorage, wayne_t);
   gameEngine->PermanentStorage = PermanentStorage;
-  gameEngine->BackBuffer = pushStruct(PermanentStorage, game_offscreen_buffer);
+  gameEngine->BackBuffer = pushStruct(PermanentStorage, wayne_offscreen_buffer);
   gameEngine->GameState = pushStruct(PermanentStorage, game_state);
   gameEngine->entityManager = pushStruct(PermanentStorage, entity_manager);
   EntityManager_init(gameEngine->entityManager);
@@ -77,77 +116,80 @@ extern "C" WAYNE_BOOTSTRAP(Wayne_bootstrap) {
 
   gameEngine->frameContext = pushStruct(PermanentStorage, frame_context);
   gameEngine->frameContext->frameArena = TransientStorage;
-  gameEngine->SystemsCount = 0;
 
   // TODO: find a solution to the limited number of systems
-  u8 MaxNumberOfSystems = 10;
-  gameEngine->Systems = pushSizeTimes(gameEngine->PermanentStorage, system_t *,
-                                      MaxNumberOfSystems);
+  gameEngine->SystemsCount = 0;
+  gameEngine->MaxSystems = 10;
+  gameEngine->Systems =
+      pushSizeTimes(PermanentStorage, system_t, gameEngine->MaxSystems);
 
   return gameEngine;
 }
 
-extern "C" WAYNE_INIT(Wayne_init) {
-  self->msFromStart = msFromStart;
-  // This is temporary usually the systems area added by an external piece of
-  // code this file should contain only the basic pieces of the engine
+// Move this code somewhere else
+// INIT
+/*GameEngine_addSystem(self, GAME_ENGINE_INIT, spawnEntities);*/
+/**/
+/*// INPUT*/
+/*GameEngine_addSystem(self, GAME_ENGINE_INPUT, handlePlayerInput);*/
+/**/
 
-  // INIT
-  /*GameEngine_addSystem(self, GAME_ENGINE_INIT, spawnEntities);*/
-  /**/
-  /*// INPUT*/
-  /*GameEngine_addSystem(self, GAME_ENGINE_INPUT, handlePlayerInput);*/
-  /**/
+// UPDATE
+//
+// Wayne_addSystem(self, WAYNE_INIT,
+//                generateAudio); // make a pass in the init too
+// Wayne_addSystem(self, WAYNE_UPDATE, generateAudio);
+//
+// Wayne_addSystem(self, WAYNE_UPDATE,moveSystem);
 
-  // UPDATE
-  //
-  // Wayne_addSystem(self, WAYNE_INIT,
-  //                generateAudio); // make a pass in the init too
-  // Wayne_addSystem(self, WAYNE_UPDATE, generateAudio);
-  //
-  // Wayne_addSystem(self, WAYNE_UPDATE,moveSystem);
+/*GameEngine_addSystem(self, GAME_ENGINE_UPDATE, keepInBoundsSystem);*/
 
-  /*GameEngine_addSystem(self, GAME_ENGINE_UPDATE, keepInBoundsSystem);*/
+// RENDER
+// Wayne_addSystem(self, WAYNE_RENDER, renderWeirdGradient);
+/*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderShapeSystem);*/
+/*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderPlayerSystem);*/
 
-  // RENDER
-  // Wayne_addSystem(self, WAYNE_RENDER, renderWeirdGradient);
-  /*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderShapeSystem);*/
-  /*GameEngine_addSystem(self, GAME_ENGINE_RENDER, renderPlayerSystem);*/
-
-  // this function is only called once but I don't like to trick the pre and
-  // post frame in theory I need this only for the system params but if some
-  // other system will need a temporary memory to do things is good to call them
-  // for now
-  //
-  // FIXME: later when you're almost done with the project check if there is a
-  // better way to handle this
-  Wayne_preFrame(self);
-
-  //  loopThroughSystems(self, WAYNE_INIT);
-  generateAudio(self->frameContext->systemParams);
-
-  Wayne_postFrame(self);
-}
+//  loopThroughSystems(self, WAYNE_INIT);
+//
 
 extern "C" WAYNE_UPDATE_AND_RENDER(Wayne_updateAndRender) {
+  // 2025-03-04: ok this works because I know that the first thing I push in the
+  // PermanentStorage is always the wayne_t struct itself, and currently it
+  // seems smart but I feel like it shouldn't be done or it will bite me in the
+  // future
+  wayne_t *self = (wayne_t *)PermanentStorage->startAddress;
+
   self->msFromStart = msFromStart;
+  self->AudioBuffer = AudioBuffer;
+  self->BackBuffer = BackBuffer;
+
   // FIXME: I feel there is a better way to do this but I might be wrong check
   // it
-  for (int ControllerIndex = 0; ControllerIndex < MAX_N_CONTROLLERS;
+  for (int ControllerIndex = 0; ControllerIndex < ArrayCount(self->Controllers);
        ControllerIndex++) {
     self->Controllers[ControllerIndex] = Controllers[ControllerIndex];
   }
 
-  // loopThroughSystems(self, WAYNE_INPUT);
-
-  // TODO: calc and use delta Time or run the update enough to keep the
-  // framerate stable
-  // loopThroughSystems(self, WAYNE_UPDATE);
-  // loopThroughSystems(self, WAYNE_RENDER);
-
-  // temporary test to assure a thing about hot reload
   Wayne_preFrame(self);
-  renderWeirdGradient(self->frameContext->systemParams);
+  system_params *SystemParams = self->frameContext->systemParams;
+
+#if USE_ECS_SYSTEMS
+  loopThroughSystems(self, WAYNE_INPUT);
+  loopThroughSystems(self, WAYNE_UPDATE);
+  loopThroughSystems(self, WAYNE_RENDER);
+#else
+  // TODO: maybe leverage CPP function overload to have a more clear view of
+  // wath each system requires without masking it behind the system_params
+  // struct
+  handlePlayerInput(SystemParams);
+  DrawRectangle(
+      self->BackBuffer, (vec2){.x = 0.0f, .y = 0.0f},
+      (vec2){.w = self->BackBuffer->Width, .h = self->BackBuffer->Height},
+      0xFF87ceeb);
+  DrawRectangle(self->BackBuffer, self->GameState->PlayerPosition,
+                (vec2){.w = 50.0f, .h = 50.0f}, 0xFFFFFFFF);
+#endif
+
   Wayne_postFrame(self);
 }
 

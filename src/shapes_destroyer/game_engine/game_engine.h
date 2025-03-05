@@ -1,10 +1,10 @@
 #pragma once
 
-#include "../constants.h"
+#include "../../constants.h"
+#include "../../memory.h"
+#include "../../types.h"
 #include "../ecs/entity.h"
 #include "../ecs/systems.h"
-#include "../memory.h"
-#include "types.h"
 
 typedef struct GameEngine wayne_t;
 
@@ -25,6 +25,8 @@ typedef struct frame_context {
 struct game_state {
   u16 BlueOffset;
   u16 GreenOffset;
+
+  vec2 PlayerPosition;
 };
 
 struct GameEngine {
@@ -33,14 +35,15 @@ struct GameEngine {
   memory_arena *TransientStorage;
   entity_manager *entityManager;
   frame_context *frameContext;
-  game_offscreen_buffer *BackBuffer;
+  wayne_offscreen_buffer *BackBuffer;
   wayne_audio_buffer *AudioBuffer;
   game_state *GameState;
 
   wayne_controller_input Controllers[MAX_N_CONTROLLERS];
 
   u8 SystemsCount;
-  system_t **Systems;
+  u8 MaxSystems;
+  system_t *Systems;
 };
 
 // FIXME: the bootstrap should take in the allocated memory itself and shouldn't
@@ -50,21 +53,19 @@ struct GameEngine {
   wayne_t *(name)(memory_arena * PermanentStorage,                             \
                   memory_arena * TransientStorage)
 typedef WAYNE_BOOTSTRAP(wayne_bootstrap);
-WAYNE_BOOTSTRAP(Wayne_bootsrapStub) { return NULL; }
 
 #define WAYNE_UPDATE_AND_RENDER(name)                                          \
-  void(name)(wayne_t * self, u64 msFromStart,                                  \
-             wayne_controller_input Controllers[MAX_N_CONTROLLERS])
+  void(name)(memory_arena * PermanentStorage, u64 msFromStart,                 \
+             wayne_controller_input Controllers[MAX_N_CONTROLLERS],            \
+             wayne_offscreen_buffer * BackBuffer,                              \
+             wayne_audio_buffer * AudioBuffer)
 typedef WAYNE_UPDATE_AND_RENDER(wayne_update_and_render);
-WAYNE_UPDATE_AND_RENDER(Wayne_updateAndRenderStub) {}
-
-#define WAYNE_INIT(name) void(name)(wayne_t * self, u64 msFromStart)
-typedef WAYNE_INIT(wayne_init);
-WAYNE_INIT(Wayne_initStub) {}
 
 #define WAYNE_DESTROY(name) void(name)(wayne_t * self)
 typedef WAYNE_DESTROY(wayne_destroy);
-WAYNE_DESTROY(Wayne_destroyStub) {}
+
+#define WAYNE_RESET_SYSTEMS(name) void(name)(memory_arena * PermanentStorage)
+typedef WAYNE_RESET_SYSTEMS(wayne_reset_systems);
 
 void Wayne_preFrame(wayne_t *self);
 void Wayne_postFrame(wayne_t *self);

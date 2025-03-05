@@ -1,13 +1,14 @@
 #pragma once
 
-#include "../types.h"
+#include "../../types.h"
 
 typedef struct GameOffscreenBuffer {
   void *Memory;
   int Width;
   int Height;
   int Pitch;
-} game_offscreen_buffer;
+  u8 BytesPerPixel;
+} wayne_offscreen_buffer;
 
 struct wayne_audio_buffer {
   void *Data;

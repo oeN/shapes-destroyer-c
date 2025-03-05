@@ -15,6 +15,14 @@
 #define global_variable static
 
 typedef int8_t int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
+
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
 
 typedef uint8_t uint8;   // can hold from 0 to 255
 typedef uint16_t uint16; // can hold from 0 to 65535
@@ -26,6 +34,9 @@ typedef uint16 u16;
 typedef uint32 u32;
 typedef uint64 u64;
 
+typedef float f32;
+typedef double f64;
+
 typedef size_t memory_size;
 
 typedef struct Node linked_list_node;
@@ -34,18 +45,55 @@ struct Node {
   void *value;
 };
 
-typedef struct GameContext game_context;
-
-typedef union Vec2 {
+union vec2 {
+  f32 v[2];
   struct {
-    float x, y;
+    f32 x, y;
   };
-  float v[2];
-} vec2;
+  struct {
+    f32 w, h;
+  };
+
+  void operator+=(vec2 rhs) {
+    this->x += rhs.x;
+    this->y += rhs.y;
+  }
+
+  vec2 operator+(vec2 rhs) {
+    vec2 result = *this;
+    result.x += rhs.x;
+    result.y += rhs.y;
+    return result;
+  }
+
+  vec2 operator-(vec2 rhs) {
+    vec2 result = *this;
+    result.x -= rhs.x;
+    result.y -= rhs.y;
+    return result;
+  }
+
+  vec2 operator*(f32 rhs) {
+    vec2 result = *this;
+    result.x *= rhs;
+    result.y *= rhs;
+    return result;
+  }
+};
+
+union vec2i {
+  f32 v[2];
+  struct {
+    f32 x, y;
+  };
+  struct {
+    f32 w, h;
+  };
+};
 
 typedef union Vec4 {
+  f32 v[4];
   struct {
-    float r, g, b, a;
+    f32 r, g, b, a;
   };
-  float v[4];
 } vec4;

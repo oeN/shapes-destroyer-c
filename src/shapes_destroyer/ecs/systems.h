@@ -1,14 +1,14 @@
 #pragma once
 
+#include "../../memory.h"
 #include "../game_engine/types.h"
-#include "../memory.h"
 #include "entity.h"
 
 // not all system uses all of the parameters, so any of them can be NULL
 // each system should null check before using them
 typedef struct SystemParams {
   entity_manager *entityManager;
-  game_offscreen_buffer *backBuffer;
+  wayne_offscreen_buffer *backBuffer;
   wayne_audio_buffer *AudioBuffer;
   memory_arena *tempArena;
   // temporary add a reference to the game engine to test out if it is better to

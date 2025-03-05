@@ -1,4 +1,6 @@
-#include <SDL3/SDL_loadso.h>
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_timer.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -6,13 +8,23 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
-#include "shapes_destroyer/base.h"
+#include "base.h"
+#include "constants.h"
+#include "types.h"
+
+#if HANDMADE_HERO
+#include "my_handmade_hero/my_handmade_hero.h"
+typedef void game_engine;
+#else
+#include "shapes_destroyer/game_engine/game_engine.h"
+typedef wayne_controller_input game_controller_input;
+typedef wayne_controller_button game_controller_button;
+typedef wayne_t game_engine;
+#endif
 
 #define Assert(Expression) SDL_assert(Expression)
 
-#include "shapes_destroyer/constants.h"
-#include "shapes_destroyer/game_engine/game_engine.h"
-#include "shapes_destroyer/types.h"
+#define GLOBAL_AUDIO_GAIN 0.1f
 
 typedef struct sdl_offscreen_buffer {
   SDL_Texture *Texture;
@@ -20,32 +32,78 @@ typedef struct sdl_offscreen_buffer {
   int Width;
   int Height;
   int Pitch;
+  u8 BytesPerPixel;
 } sdl_offscreen_buffer;
+
+struct sdl_audio_buffer {
+  SDL_AudioStream *AudioStream;
+  void *Data;
+
+  SDL_AudioDeviceID AudioDeviceId;
+  u8 Channels;
+  u32 BufferSize;
+  int BytesPerSample;
+  int SamplesPerSecond;
+  int ToneHz;
+  int ToneVolume;
+  int WavePeriod;
+};
 
 struct sdl_controllers_mapping {
   int ControllersCount;
   // even if the 0 is always the keyboard, for convenience we create an array of
   // the same size for the JoysticIds
   SDL_JoystickID JoysticIdsByIndex[MAX_N_CONTROLLERS];
-  wayne_controller_input Controllers[MAX_N_CONTROLLERS];
+  game_controller_input Controllers[MAX_N_CONTROLLERS];
 };
 
 typedef struct app_state {
   SDL_Window *Window;
   SDL_Renderer *Renderer;
-  wayne_t *GameEngine;
-  SDL_AudioStream *AudioStream;
+  game_engine *GameEngine;
   memory_arena *GamePermanentStorage;
   memory_arena *GameTransientStorage;
 
+  sdl_controllers_mapping *NewInput;
+  sdl_controllers_mapping *OldInput;
+  sdl_controllers_mapping Controllers[2];
+
+  f32 TargetRefreshRate;
+  f32 TargetMsPerFrame;
+
   sdl_offscreen_buffer BackBuffer;
-  SDL_AudioDeviceID AudioDeviceId;
-  wayne_audio_buffer AudioBuffer;
-  sdl_controllers_mapping Controllers;
+  sdl_audio_buffer AudioBuffer;
+
+  char *RecordFilename;
+  SDL_IOStream *RecordStream;
+  size_t RecordOffsetFromStart;
+
+  char *PlaybackFilename;
+  SDL_IOStream *PlaybackStream;
+  size_t PlaybackOffsetFromStart;
+
+  u64 LastTick;
 
   bool AudioIsPaused;
+  bool InputIsRecording;
+  bool InputIsPlaying;
 } app_state;
 
+#if HANDMADE_HERO
+struct game_code {
+  SDL_SharedObject *CodeHandle;
+  SDL_Time LastModified;
+
+  char *FullLibPath;
+
+  game_update_and_render *UpdateAndRender;
+
+  bool IsValid;
+  bool JustReloaded;
+};
+
+global_variable game_code GameCode;
+#else
 struct game_code {
   SDL_SharedObject *CodeHandle;
   SDL_Time LastModified;
@@ -53,14 +111,16 @@ struct game_code {
   char *FullLibPath;
 
   wayne_bootstrap *Bootstrap;
-  wayne_init *Init;
   wayne_update_and_render *UpdateAndRender;
+  wayne_reset_systems *ResetSystems;
   wayne_destroy *Destroy;
 
   bool IsValid;
+  bool JustReloaded;
 };
 
 global_variable game_code GameCode;
+#endif
 
 #define MyInitFlags SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK
 
@@ -77,7 +137,7 @@ internal void MySDL_ResizeTexture(sdl_offscreen_buffer *Buffer,
     SDL_free(Buffer->Memory);
   }
 
-  int BytesPerPixel = 4;
+  Buffer->BytesPerPixel = 4;
   Buffer->Width = Width;
   Buffer->Height = Height;
 
@@ -88,14 +148,13 @@ internal void MySDL_ResizeTexture(sdl_offscreen_buffer *Buffer,
   Assert(Buffer->Texture);
 
   int NumberOfPixels = Buffer->Width * Buffer->Height;
-  Buffer->Memory = SDL_calloc(NumberOfPixels, BytesPerPixel);
-  SDL_memset4(Buffer->Memory, 0, NumberOfPixels * BytesPerPixel);
+  Buffer->Memory = SDL_calloc(NumberOfPixels, Buffer->BytesPerPixel);
+  SDL_memset4(Buffer->Memory, 0, NumberOfPixels * Buffer->BytesPerPixel);
 
-  Buffer->Pitch = Width * BytesPerPixel;
+  Buffer->Pitch = Width * Buffer->BytesPerPixel;
 }
 
-internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer,
-                                   SDL_AudioStream **OutAudioStream) {
+internal int MySDL_InitSoundBuffer(sdl_audio_buffer *Buffer) {
   // open an audio device
   SDL_AudioSpec Spec = {
       .format = SDL_AUDIO_F32,
@@ -104,24 +163,24 @@ internal int MySDL_InitSoundBuffer(wayne_audio_buffer *Buffer,
   };
 
   // create an audio stream
-  *OutAudioStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
-                                              &Spec, NULL, Buffer->Data);
-  if (!*OutAudioStream) {
+  Buffer->AudioStream = SDL_OpenAudioDeviceStream(
+      SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &Spec, NULL, Buffer->Data);
+  if (!Buffer->AudioStream) {
     SDL_Log("Failed to create audio stream: %s", SDL_GetError());
     return 0;
   }
 
-  // SDL_ClearAudioStream(*OutAudioStream);
-  SDL_SetAudioStreamGain(*OutAudioStream, 0.1f);
+  SDL_ClearAudioStream(Buffer->AudioStream);
+  SDL_SetAudioStreamGain(Buffer->AudioStream, GLOBAL_AUDIO_GAIN);
 
   return 1;
 }
 
-internal void MySDL_FillSoundBuffer(SDL_AudioStream *AudioStream,
-                                    wayne_audio_buffer *Buffer) {
+internal void MySDL_FillSoundBuffer(sdl_audio_buffer *AudioBuffer) {
   // FIXME: the audio doesn't work properly at the start and quit of the app
   return;
-  SDL_PutAudioStreamData(AudioStream, Buffer->Data, Buffer->BufferSize);
+  SDL_PutAudioStreamData(AudioBuffer->AudioStream, AudioBuffer->Data,
+                         AudioBuffer->BufferSize);
 }
 
 internal void CatStrings(const char *StringA, const char *StringB, char *Dest) {
@@ -163,29 +222,42 @@ internal void MySDL_LoadGameCode(game_code *LocalGameCode) {
   }
   LocalGameCode->LastModified = LibInfo.modify_time;
 
+#if HANDMADE_HERO
+  LocalGameCode->UpdateAndRender = (game_update_and_render *)SDL_LoadFunction(
+      LocalGameCode->CodeHandle, "UpdateAndRender");
+#else
   LocalGameCode->Bootstrap = (wayne_bootstrap *)SDL_LoadFunction(
       LocalGameCode->CodeHandle, "Wayne_bootstrap");
-  LocalGameCode->Init =
-      (wayne_init *)SDL_LoadFunction(LocalGameCode->CodeHandle, "Wayne_init");
   LocalGameCode->UpdateAndRender = (wayne_update_and_render *)SDL_LoadFunction(
       LocalGameCode->CodeHandle, "Wayne_updateAndRender");
   LocalGameCode->Destroy = (wayne_destroy *)SDL_LoadFunction(
       LocalGameCode->CodeHandle, "Wayne_destroy");
+  LocalGameCode->ResetSystems = (wayne_reset_systems *)SDL_LoadFunction(
+      LocalGameCode->CodeHandle, "Wayne_ResetSystems");
+#endif
 
-  if (LocalGameCode->Bootstrap && LocalGameCode->Init &&
-      LocalGameCode->UpdateAndRender && LocalGameCode->Destroy) {
+#if HANDMADE_HERO
+  bool LoadedEverything = LocalGameCode->UpdateAndRender;
+#else
+  bool LoadedEverything = LocalGameCode->Bootstrap &&
+                          LocalGameCode->UpdateAndRender &&
+                          LocalGameCode->Destroy && LocalGameCode->ResetSystems;
+#endif
+
+  if (LoadedEverything) {
     LocalGameCode->IsValid = true;
+    LocalGameCode->JustReloaded = true;
   }
 
   if (!LocalGameCode->IsValid) {
-    LocalGameCode->Bootstrap = Wayne_bootsrapStub;
-    LocalGameCode->Init = Wayne_initStub;
-    LocalGameCode->UpdateAndRender = Wayne_updateAndRenderStub;
-    LocalGameCode->Destroy = Wayne_destroyStub;
+    LocalGameCode->UpdateAndRender = 0;
+#if !HANDMADE_HERO
+    LocalGameCode->Bootstrap = 0;
+    LocalGameCode->Destroy = 0;
+    LocalGameCode->ResetSystems = 0;
+#endif
 
     SDL_Log("Cannot load the game code %s", SDL_GetError());
-    // we don't need to return anything because the code should work with the
-    // stub and in the future will hot reload the code anyway
   }
 }
 
@@ -208,93 +280,120 @@ internal memory_arena *MySDL_CreateMemoryArena(memory_size TotalSize) {
   return Arena;
 }
 
-SDL_AppResult SDL_AppInit(void **AppState, int Argc, char **Argv) {
-  srand(time(NULL));  // use current time as seed for random generator
-
-  if (!SDL_Init(MyInitFlags)) return SDL_APP_FAILURE;
-
-  app_state *As = (app_state *)SDL_calloc(1, sizeof(app_state));
-  if (!As) return SDL_APP_FAILURE;
-  *AppState = As;
-
-  if (!SDL_CreateWindowAndRenderer("shapes-destroyer", SCREEN_WIDTH,
-                                   SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE,
-                                   &As->Window, &As->Renderer))
-    return SDL_APP_FAILURE;
-
-  GameCode = {0};
+internal char *PathFromExecutable(const char *Filname) {
   const char *CurrentBasePath = SDL_GetBasePath();
   size_t CurrentPathSize = strlen(CurrentBasePath);
 
-  // TODO: fix the output of the game code as library
-  const char *RelativeLibPath =
-      "src/shapes_destroyer/libshapes_destroyer.dylib";
-  size_t RelativeLibPathSize = strlen(RelativeLibPath);
-
   // FIXME: this seems so wrong
-  GameCode.FullLibPath =
-      (char *)SDL_calloc(RelativeLibPathSize + CurrentPathSize, 1);
+  char *Result = (char *)SDL_calloc(strlen(Filname) + CurrentPathSize, 1);
 
-  CatStrings(CurrentBasePath, RelativeLibPath, GameCode.FullLibPath);
+  CatStrings(CurrentBasePath, Filname, Result);
+  return Result;
+}
+
+SDL_AppResult SDL_AppInit(void **_AppState, int Argc, char **Argv) {
+  srand(time(NULL)); // use current time as seed for random generator
+
+  if (!SDL_Init(MyInitFlags))
+    return SDL_APP_FAILURE;
+
+  app_state *AppState = (app_state *)SDL_calloc(1, sizeof(app_state));
+  if (!AppState)
+    return SDL_APP_FAILURE;
+  *_AppState = AppState;
+  // default refresh 60 hz
+  AppState->TargetRefreshRate = 60.0f;
+
+  if (!SDL_CreateWindowAndRenderer("shapes-destroyer", SCREEN_WIDTH,
+                                   SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE,
+                                   &AppState->Window, &AppState->Renderer))
+    return SDL_APP_FAILURE;
+
+  SDL_DisplayID CurrentDisplayID = SDL_GetDisplayForWindow(AppState->Window);
+  const SDL_DisplayMode *CurrentDisplayMode =
+      SDL_GetCurrentDisplayMode(CurrentDisplayID);
+
+  if (CurrentDisplayMode) {
+    SDL_Log("the current refresh rate is %f", CurrentDisplayMode->refresh_rate);
+    // TODO: add a debug build flag
+    AppState->TargetRefreshRate = CurrentDisplayMode->refresh_rate / 2.0f;
+  }
+
+  AppState->TargetMsPerFrame = 1000.0f / AppState->TargetRefreshRate;
+
+  GameCode = {0};
+
+  // TODO: fix the output of the game code as library
+#if HANDMADE_HERO
+  GameCode.FullLibPath =
+      PathFromExecutable("src/my_handmade_hero/libmy_handmade_hero.dylib");
+#else
+  GameCode.FullLibPath =
+      PathFromExecutable("src/shapes_destroyer/libshapes_destroyer.dylib");
+#endif
+
   MySDL_LoadGameCode(&GameCode);
 
   {
-    // TODO: extract me somewhere
-    wayne_audio_buffer *Buffer = &As->AudioBuffer;
     // temporary solution, it should be done outside of here
-    Buffer->SamplesPerSecond = 48000;
-    Buffer->ToneHz = 260;
-    Buffer->ToneVolume = 100;
-    Buffer->Channels = 2;
-    Buffer->BytesPerSample = sizeof(float) * Buffer->Channels;
-    Buffer->BufferSize = Buffer->BytesPerSample * Buffer->SamplesPerSecond;
-    Buffer->WavePeriod = Buffer->SamplesPerSecond / Buffer->ToneHz;
+    AppState->AudioBuffer.SamplesPerSecond = 48000;
+    AppState->AudioBuffer.ToneHz = 260;
+    AppState->AudioBuffer.ToneVolume = 100;
+    AppState->AudioBuffer.Channels = 2;
+    AppState->AudioBuffer.BytesPerSample =
+        sizeof(float) * AppState->AudioBuffer.Channels;
+    AppState->AudioBuffer.BufferSize = AppState->AudioBuffer.BytesPerSample *
+                                       AppState->AudioBuffer.SamplesPerSecond;
+    AppState->AudioBuffer.WavePeriod =
+        AppState->AudioBuffer.SamplesPerSecond / AppState->AudioBuffer.ToneHz;
 
-    Buffer->Data = SDL_calloc(1, Buffer->BufferSize);
+    AppState->AudioBuffer.Data =
+        SDL_calloc(1, AppState->AudioBuffer.BufferSize);
   }
-  if (!As->AudioBuffer.Data) {
+  if (!AppState->AudioBuffer.Data) {
     SDL_Log("Cannot initialize audio buffer %s", SDL_GetError());
     return SDL_APP_FAILURE;
   }
 
-  if (!MySDL_InitSoundBuffer(&As->AudioBuffer, &As->AudioStream))
+  if (!MySDL_InitSoundBuffer(&AppState->AudioBuffer))
     return SDL_APP_FAILURE;
+  SDL_ResumeAudioStreamDevice(AppState->AudioBuffer.AudioStream);
+  AppState->AudioIsPaused = false;
 
-  MySDL_ResizeTexture(&As->BackBuffer, As->Renderer, 1280, 720);
+  MySDL_ResizeTexture(&AppState->BackBuffer, AppState->Renderer, SCREEN_WIDTH,
+                      SCREEN_HEIGHT);
 
-  As->GamePermanentStorage = MySDL_CreateMemoryArena(Megabytes(64));
-  As->GameTransientStorage = MySDL_CreateMemoryArena(Gigabytes(4));
+  AppState->GamePermanentStorage = MySDL_CreateMemoryArena(Megabytes(64));
+  AppState->GameTransientStorage = MySDL_CreateMemoryArena(Gigabytes(4));
 
-  As->GameEngine =
-      GameCode.Bootstrap(As->GamePermanentStorage, As->GameTransientStorage);
+#if !HANDMADE_HERO
+  AppState->GameEngine = GameCode.Bootstrap(AppState->GamePermanentStorage,
+                                            AppState->GameTransientStorage);
 
-  if (As->GameEngine) {
-    As->GameEngine->AudioBuffer = &As->AudioBuffer;
-
-    As->GameEngine->BackBuffer->Width = As->BackBuffer.Width;
-    As->GameEngine->BackBuffer->Height = As->BackBuffer.Height;
-    As->GameEngine->BackBuffer->Memory = As->BackBuffer.Memory;
-    As->GameEngine->BackBuffer->Pitch = As->BackBuffer.Pitch;
+  if (GameCode.JustReloaded && GameCode.ResetSystems) {
+    GameCode.JustReloaded = false;
+    GameCode.ResetSystems(AppState->GamePermanentStorage);
   }
+#endif
 
-  GameCode.Init(As->GameEngine, SDL_GetTicks());
+  AppState->Controllers[0] = {0};
+  AppState->Controllers[1] = {0};
+  AppState->OldInput = &AppState->Controllers[0];
+  AppState->NewInput = &AppState->Controllers[1];
 
-  MySDL_FillSoundBuffer(As->AudioStream, &As->AudioBuffer);
-  // resume the audio stream once is filled
-  SDL_ResumeAudioStreamDevice(As->AudioStream);
-  As->AudioIsPaused = false;
+  game_controller_input KeyboardController = {0};
+  KeyboardController.IsActive = true;
+  KeyboardController.IsAnalog = false;
 
-  // init the keyboard controller that for now is always active
-  wayne_controller_input DefaultController = {0};
-  DefaultController.IsActive = true;
-  DefaultController.IsAnalog = false;
-  As->Controllers.Controllers[0] = DefaultController;
-  As->Controllers.ControllersCount++;
+  AppState->NewInput->Controllers[0] = KeyboardController;
+  AppState->OldInput->Controllers[0] = KeyboardController;
+  AppState->OldInput->ControllersCount = 1;
+  AppState->NewInput->ControllersCount = 1;
 
   return SDL_APP_CONTINUE;
 }
 
-void SetButtonState(SDL_Event *Event, wayne_controller_button *Button) {
+void SetButtonState(SDL_Event *Event, game_controller_button *Button) {
   Button->HalfTransitionCount = Event->key.repeat;
   Button->isDown = Event->key.down;
 }
@@ -302,46 +401,61 @@ void SetButtonState(SDL_Event *Event, wayne_controller_button *Button) {
 SDL_AppResult MySDL_HandleKeyEvent(SDL_Event *Event,
                                    sdl_controllers_mapping *Controllers,
                                    app_state *AppState) {
-  wayne_controller_input *Keyboard = &Controllers->Controllers[0];
+  game_controller_input *Keyboard = &Controllers->Controllers[0];
 
   switch (Event->key.scancode) {
-    case SDL_SCANCODE_Q:
-    case SDL_SCANCODE_ESCAPE:
-      return SDL_APP_SUCCESS;
+  case SDL_SCANCODE_Q:
+  case SDL_SCANCODE_ESCAPE:
+    return SDL_APP_SUCCESS;
 
-    case SDL_SCANCODE_W: {
-      SetButtonState(Event, &Keyboard->MoveUp);
-    } break;
+  case SDL_SCANCODE_W: {
+    SetButtonState(Event, &Keyboard->MoveUp);
+  } break;
 
-    case SDL_SCANCODE_S: {
-      SetButtonState(Event, &Keyboard->MoveDown);
-    } break;
+  case SDL_SCANCODE_S: {
+    SetButtonState(Event, &Keyboard->MoveDown);
+  } break;
 
-    case SDL_SCANCODE_A: {
-      SetButtonState(Event, &Keyboard->MoveLeft);
-    } break;
+  case SDL_SCANCODE_A: {
+    SetButtonState(Event, &Keyboard->MoveLeft);
+  } break;
 
-    case SDL_SCANCODE_D: {
-      SetButtonState(Event, &Keyboard->MoveRight);
-    } break;
+  case SDL_SCANCODE_D: {
+    SetButtonState(Event, &Keyboard->MoveRight);
+  } break;
 
-    case SDL_SCANCODE_P: {
-      // ignore repeated keys
-      if (Event->key.repeat > 0) break;
-
-      if (!Event->key.down) break;
-
-      if (AppState->AudioIsPaused) {
-        SDL_ResumeAudioStreamDevice(AppState->AudioStream);
-      } else {
-        SDL_PauseAudioStreamDevice(AppState->AudioStream);
-      }
-      AppState->AudioIsPaused = !AppState->AudioIsPaused;
-    } break;
-
-    default: {
+  case SDL_SCANCODE_P: {
+    // ignore repeated keys
+    if (Event->key.repeat > 0)
       break;
+
+    if (!Event->key.down)
+      break;
+
+    if (AppState->AudioIsPaused) {
+      SDL_ResumeAudioStreamDevice(AppState->AudioBuffer.AudioStream);
+    } else {
+      SDL_PauseAudioStreamDevice(AppState->AudioBuffer.AudioStream);
     }
+    AppState->AudioIsPaused = !AppState->AudioIsPaused;
+  } break;
+
+  case SDL_SCANCODE_L: {
+    // ignore repeated keys
+    if (Event->key.repeat > 0)
+      break;
+
+    if (!Event->key.down)
+      break;
+
+    // we either record or play for now
+    AppState->InputIsRecording = !AppState->InputIsRecording;
+    AppState->InputIsPlaying = !AppState->InputIsRecording;
+  } break;
+
+  default: {
+    break;
+  }
   }
   return SDL_APP_CONTINUE;
 }
@@ -361,14 +475,15 @@ void MySDL_AddJoystick(SDL_Event *Event, sdl_controllers_mapping *Controllers) {
   Controllers->ControllersCount++;
 
   Controllers->JoysticIdsByIndex[ControllerIndex] = JoystickId;
-  wayne_controller_input *CurrentController =
+  game_controller_input *CurrentController =
       &Controllers->Controllers[ControllerIndex];
 
   CurrentController->IsActive = true;
 }
 
-wayne_controller_input *ControllerByJoystickId(
-    SDL_JoystickID JoystickId, sdl_controllers_mapping *Controllers) {
+game_controller_input *
+ControllerByJoystickId(SDL_JoystickID JoystickId,
+                       sdl_controllers_mapping *Controllers) {
   for (int ControllerIndex = 0; ControllerIndex < Controllers->ControllersCount;
        ControllerIndex++) {
     if (Controllers->JoysticIdsByIndex[ControllerIndex] == JoystickId)
@@ -384,9 +499,11 @@ float MySDL_NormalizeJoystickAxis(int16_t Value) {
 
   float NormalizedValue = ((float)Value / Factor) * Direction;
 
-  if (NormalizedValue < 0 && NormalizedValue > DeadZoneThreshold) return 0.0;
+  if (NormalizedValue < 0 && NormalizedValue > DeadZoneThreshold)
+    return 0.0;
 
-  if (NormalizedValue > 0 && NormalizedValue < DeadZoneThreshold) return 0.0;
+  if (NormalizedValue > 0 && NormalizedValue < DeadZoneThreshold)
+    return 0.0;
 
   return NormalizedValue;
 }
@@ -395,76 +512,77 @@ void MySDL_HandleButtonEvent(SDL_Event *Event,
                              sdl_controllers_mapping *Controllers) {
   // TODO: handle up and down with the transitions counter
 
-  wayne_controller_input *CurrentController =
+  game_controller_input *CurrentController =
       ControllerByJoystickId(Event->jaxis.which, Controllers);
-  if (!CurrentController) return;
+  if (!CurrentController)
+    return;
 
   switch (Event->jbutton.button) {
-    case 0: {
-      CurrentController->ButtonSouth.HalfTransitionCount++;
-      CurrentController->ButtonSouth.isDown = Event->jbutton.down;
-    } break;
+  case 0: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
+    CurrentController->ButtonSouth.isDown = Event->jbutton.down;
+  } break;
 
-    case 1: {
-      CurrentController->ButtonSouth.HalfTransitionCount++;
-      CurrentController->ButtonEast.isDown = Event->jbutton.down;
-    } break;
+  case 1: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
+    CurrentController->ButtonEast.isDown = Event->jbutton.down;
+  } break;
 
-    case 2: {
-      CurrentController->ButtonSouth.HalfTransitionCount++;
-      CurrentController->ButtonWest.isDown = Event->jbutton.down;
-    } break;
+  case 2: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
+    CurrentController->ButtonWest.isDown = Event->jbutton.down;
+  } break;
 
-    case 3: {
-      CurrentController->ButtonSouth.HalfTransitionCount++;
-      CurrentController->ButtonNorth.isDown = Event->jbutton.down;
-    } break;
+  case 3: {
+    CurrentController->ButtonSouth.HalfTransitionCount++;
+    CurrentController->ButtonNorth.isDown = Event->jbutton.down;
+  } break;
   }
 }
 
-SDL_AppResult SDL_AppEvent(void *AppState, SDL_Event *Event) {
-  app_state *As = (app_state *)AppState;
+SDL_AppResult SDL_AppEvent(void *_AppState, SDL_Event *Event) {
+  app_state *AppState = (app_state *)_AppState;
   switch (Event->type) {
-    case SDL_EVENT_QUIT:
-      return SDL_APP_SUCCESS;
+  case SDL_EVENT_QUIT:
+    return SDL_APP_SUCCESS;
 
-    case SDL_EVENT_JOYSTICK_ADDED: {
-      MySDL_AddJoystick(Event, &As->Controllers);
+  case SDL_EVENT_JOYSTICK_ADDED: {
+    MySDL_AddJoystick(Event, AppState->NewInput);
+  }
+    return SDL_APP_CONTINUE;
+
+  case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
+    game_controller_input *CurrentController =
+        ControllerByJoystickId(Event->jaxis.which, AppState->NewInput);
+    SDL_JoyAxisEvent AxisEvent = Event->jaxis;
+    if (CurrentController) {
+      CurrentController->IsAnalog = true;
+
+      if (AxisEvent.axis == 0)
+        CurrentController->StickY =
+            MySDL_NormalizeJoystickAxis(AxisEvent.value);
+
+      if (AxisEvent.axis == 1)
+        CurrentController->StickX =
+            MySDL_NormalizeJoystickAxis(AxisEvent.value);
     }
-      return SDL_APP_CONTINUE;
+  }
+    return SDL_APP_CONTINUE;
 
-    case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
-      wayne_controller_input *CurrentController =
-          ControllerByJoystickId(Event->jaxis.which, &As->Controllers);
-      SDL_JoyAxisEvent AxisEvent = Event->jaxis;
-      if (CurrentController) {
-        CurrentController->IsAnalog = true;
+  case SDL_EVENT_JOYSTICK_BUTTON_UP:
+  case SDL_EVENT_JOYSTICK_BUTTON_DOWN: {
+    MySDL_HandleButtonEvent(Event, AppState->NewInput);
+  }
+    return SDL_APP_CONTINUE;
 
-        if (AxisEvent.axis == 0)
-          CurrentController->StickY =
-              MySDL_NormalizeJoystickAxis(AxisEvent.value);
+  case SDL_EVENT_JOYSTICK_REMOVED: {
+    // TODO: handle me
+  }
+    return SDL_APP_CONTINUE;
 
-        if (AxisEvent.axis == 1)
-          CurrentController->StickX =
-              MySDL_NormalizeJoystickAxis(AxisEvent.value);
-      }
-    }
-      return SDL_APP_CONTINUE;
-
-    case SDL_EVENT_JOYSTICK_BUTTON_UP:
-    case SDL_EVENT_JOYSTICK_BUTTON_DOWN: {
-      MySDL_HandleButtonEvent(Event, &As->Controllers);
-    }
-      return SDL_APP_CONTINUE;
-
-    case SDL_EVENT_JOYSTICK_REMOVED: {
-      // TODO: handle me
-    }
-      return SDL_APP_CONTINUE;
-
-    case SDL_EVENT_KEY_DOWN:
-    case SDL_EVENT_KEY_UP:
-      return MySDL_HandleKeyEvent(Event, &As->Controllers, As);
+  case SDL_EVENT_KEY_DOWN:
+  case SDL_EVENT_KEY_UP:
+    return MySDL_HandleKeyEvent(Event, AppState->NewInput, AppState);
   }
   return SDL_APP_CONTINUE;
 }
@@ -478,39 +596,174 @@ internal void MySDL_UpdateWindow(SDL_Window *Window, SDL_Renderer *Renderer,
   SDL_RenderPresent(Renderer);
 }
 
-SDL_AppResult SDL_AppIterate(void *AppState) {
-  app_state *As = (app_state *)AppState;
-  const Uint64 Now = SDL_GetTicks();
+internal void MySDL_HitTargetFramerate(app_state *AppState) {
+  const u64 Now = SDL_GetTicks();
+  u64 Elapsed = Now - AppState->LastTick;
+  u32 WaitFor = AppState->TargetMsPerFrame - Elapsed;
+#if DEBUG
+  SDL_Log("Target %f - Time to Compute %" PRIu64 " - Wait for %" PRIu32,
+          AppState->TargetMsPerFrame, Elapsed, WaitFor);
+#endif
+  SDL_Delay(WaitFor);
+}
 
-  // reset the transient storage
-  As->GameTransientStorage->used = 0;
+internal void SwapAndResetControllers(app_state *AppState) {
+  sdl_controllers_mapping *Temp = AppState->OldInput;
+  AppState->OldInput = AppState->NewInput;
+  AppState->NewInput = Temp;
 
-  GameCode.UpdateAndRender(As->GameEngine, Now, As->Controllers.Controllers);
+  game_controller_input ZeroKeyboard = {0};
+  ZeroKeyboard.IsActive = true;
+  ZeroKeyboard.IsAnalog = false;
+  AppState->NewInput->Controllers[0] = ZeroKeyboard;
 
-  MySDL_FillSoundBuffer(As->AudioStream, &As->AudioBuffer);
-  MySDL_UpdateWindow(As->Window, As->Renderer, &As->BackBuffer);
+  game_controller_input *OldKeyboardController =
+      &AppState->OldInput->Controllers[0];
+  game_controller_input *NewKeyboardController =
+      &AppState->NewInput->Controllers[0];
 
-  for (int i = 0; i < As->Controllers.ControllersCount; i++) {
-    // reset the half transitions count
-    wayne_controller_input *Controller = &As->Controllers.Controllers[i];
-    for (int ButtonIndex = 0; ButtonIndex < ArraySize(Controller->Buttons);
-         ButtonIndex++) {
-      Controller->Buttons[ButtonIndex].HalfTransitionCount = 0;
-    }
+  for (int ButtonIndex = 0;
+       ButtonIndex < ArraySize(OldKeyboardController->Buttons); ButtonIndex++) {
+    NewKeyboardController->Buttons[ButtonIndex].isDown =
+        OldKeyboardController->Buttons[ButtonIndex].isDown;
+  }
+}
+internal void MySDL_RecordInput(app_state *AppState) {
+  // code the record the input, take the newinput and put in a file
+  sdl_controllers_mapping *Input = AppState->NewInput;
+  if (!AppState->RecordFilename) {
+    AppState->RecordFilename = PathFromExecutable("loop.rec");
   }
 
-  // The hot reload will not work with how the systems are implemented now,
-  // because we're calling them through pointers and not directly so we need to
-  // find a solution for that. BUT BEFORE GOING INTO THE RABBIT HOLE try to call
-  // the systems directly
-  //
-  // TODO: record this victory in a victory log??
-  // 2025-03-03: Hippye!!! is how I tought passin the system callback by
-  // pointer will prevent the hot reload to working properly
-  //
-  // there is another problem with the hot reload, we're storing the offsets as
-  // local_persists and they refresh at every frame (for now) fix that too
+  if (!AppState->RecordStream) {
+    AppState->RecordStream =
+        SDL_IOFromFile((const char *)AppState->RecordFilename, "wb+");
+  } else {
+    // SDL_IOStatus RecordStatus = SDL_GetIOStatus(AppState->RecordStream);
+  }
+
+  if (!AppState->RecordStream) {
+    SDL_Log("Error while opening the record file `%s` stream %s",
+            AppState->RecordFilename, SDL_GetError());
+  }
+
+  // if it's really slow improve it, otherwise leave it is debug code anyway
+  // SDL_SeekIO(RecordIOStream, AppState->RecordOffsetFromStart,
+  // SDL_IO_SEEK_SET);
+  size_t BytesWritten = SDL_WriteIO(AppState->RecordStream, Input,
+                                    sizeof(sdl_controllers_mapping));
+  AppState->RecordOffsetFromStart += BytesWritten;
+  // SDL_CloseIO(RecordIOStream);
+
+  if (BytesWritten != sizeof(sdl_controllers_mapping)) {
+    SDL_Log("Written %lu Expected %lu", BytesWritten,
+            sizeof(sdl_controllers_mapping));
+  }
+}
+
+internal void MySDL_PlaybackInput(app_state *AppState) {
+  sdl_controllers_mapping *Input = AppState->NewInput;
+  if (!AppState->PlaybackFilename) {
+    AppState->PlaybackFilename = PathFromExecutable("loop.rec");
+  }
+
+  if (!AppState->PlaybackStream) {
+    AppState->PlaybackStream =
+        SDL_IOFromFile((const char *)AppState->PlaybackFilename, "rb");
+  }
+
+  SDL_IOStream *Stream = AppState->PlaybackStream;
+  if (!Stream) {
+    SDL_Log("Error while opening the record file `%s` stream %s",
+            AppState->PlaybackFilename, SDL_GetError());
+  }
+
+#if 0
+  if (SDL_SeekIO(Stream, AppState->PlaybackOffsetFromStart, SDL_IO_SEEK_SET) !=
+      -1) {
+#endif
+
+  size_t BytesRead = SDL_ReadIO(Stream, Input, sizeof(sdl_controllers_mapping));
+  AppState->PlaybackOffsetFromStart += BytesRead;
+
+  if (BytesRead != sizeof(sdl_controllers_mapping)) {
+    SDL_Log("Read %lu Expected %lu Offset %lu", BytesRead,
+            sizeof(sdl_controllers_mapping), AppState->PlaybackOffsetFromStart);
+    // read from the beginning
+    AppState->PlaybackOffsetFromStart = 0;
+    SDL_SeekIO(AppState->PlaybackStream, AppState->PlaybackOffsetFromStart,
+               SDL_IO_SEEK_SET);
+  }
+
+#if 0
+  } else {
+    SDL_Log("error while seeking %s", SDL_GetError());
+  }
+
+  SDL_CloseIO(Stream);
+#endif
+}
+
+SDL_AppResult SDL_AppIterate(void *_AppState) {
+  app_state *AppState = (app_state *)_AppState;
+  u64 Now = SDL_GetTicks();
+  // we want the DeltaTime in seconds and the value returned by SDL_GetTicks are
+  // milliseconds
+  f32 DeltaTime = (f32)((f64)(Now - AppState->LastTick) / 1000.0f);
+  AppState->LastTick = Now;
+
+  // reset the transient storage, without actually zeroing the memory
+  AppState->GameTransientStorage->used = 0;
+
+  // FIXME: there is a bug once we toggle the recording after the first time it
+  // keeps playing back the previous input making impossible to controll the
+  // square I haven't debugged it yet
+  if (AppState->InputIsRecording) {
+    MySDL_RecordInput(AppState);
+  }
+
+  if (AppState->InputIsPlaying) {
+    MySDL_PlaybackInput(AppState);
+  }
+
+  if (GameCode.UpdateAndRender) {
+    game_audio_buffer AudioBuffer = {0};
+    AudioBuffer.Data = AppState->AudioBuffer.Data;
+    AudioBuffer.BufferSize = AppState->AudioBuffer.BufferSize;
+    AudioBuffer.BytesPerSample = AppState->AudioBuffer.BytesPerSample;
+    AudioBuffer.SamplesPerSecond = AppState->AudioBuffer.SamplesPerSecond;
+    AudioBuffer.Channels = AppState->AudioBuffer.Channels;
+    AudioBuffer.ToneHz = AppState->AudioBuffer.ToneHz;
+    AudioBuffer.WavePeriod = AppState->AudioBuffer.WavePeriod;
+
+    game_offscreen_buffer BackBuffer = {0};
+    BackBuffer.Height = AppState->BackBuffer.Height;
+    BackBuffer.Memory = AppState->BackBuffer.Memory;
+    BackBuffer.Pitch = AppState->BackBuffer.Pitch;
+    BackBuffer.Width = AppState->BackBuffer.Width;
+    BackBuffer.BytesPerPixel = AppState->BackBuffer.BytesPerPixel;
+
+    GameCode.UpdateAndRender(AppState->GamePermanentStorage, DeltaTime,
+                             AppState->NewInput->Controllers, &BackBuffer,
+                             &AudioBuffer);
+  }
+
+  MySDL_FillSoundBuffer(&AppState->AudioBuffer);
+  MySDL_UpdateWindow(AppState->Window, AppState->Renderer,
+                     &AppState->BackBuffer);
+
   MySDL_LoadGameCode(&GameCode);
+#if !HANDMADE_HERO
+  if (GameCode.JustReloaded && GameCode.ResetSystems) {
+    GameCode.JustReloaded = false;
+    GameCode.ResetSystems(AppState->GamePermanentStorage);
+  }
+#endif
+
+  SwapAndResetControllers(AppState);
+  // with DeltaTime we should be FPS independent but let's leave this here in
+  // order to not compute stuff for nothing
+  MySDL_HitTargetFramerate(AppState);
 
   return SDL_APP_CONTINUE;
 }
@@ -518,8 +771,12 @@ SDL_AppResult SDL_AppIterate(void *AppState) {
 void SDL_AppQuit(void *AppState, SDL_AppResult Result) {
   if (AppState != NULL) {
     app_state *As = (app_state *)AppState;
-    SDL_PauseAudioStreamDevice(As->AudioStream);
-    GameCode.Destroy(As->GameEngine);
+    SDL_PauseAudioStreamDevice(As->AudioBuffer.AudioStream);
+#if !HANDMADE_HERO
+    if (GameCode.Destroy) {
+      GameCode.Destroy(As->GameEngine);
+    }
+#endif
     SDL_free(As->AudioBuffer.Data);
     SDL_free(As->GameTransientStorage);
     SDL_free(As->GamePermanentStorage);

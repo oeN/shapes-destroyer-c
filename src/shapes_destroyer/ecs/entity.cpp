@@ -1,6 +1,6 @@
 #include "entity.h"
-#include "../base.h"
-#include "../constants.h"
+#include "../../base.h"
+#include "../../constants.h"
 
 void EntityManager_init(entity_manager *self) {
   self->totalEntities = 0;

@@ -2,11 +2,9 @@
 #include "../game_engine/game_engine.h"
 #include <math.h>
 
-#include "../constants.h"
-#include "../mymath.h"
-#include "../types.h"
-#include "entity.h"
-#include "memory.h"
+#include "../../constants.h"
+#include "../../mymath.h"
+#include "../../types.h"
 
 // NOTE: do we really want to use guard clause in the systems?
 // I want them to break if I'm not passing something to it, if needed we can
@@ -53,7 +51,7 @@ void spawnEntities(system_params *params) {
 }
 
 void renderWeirdGradient(system_params *params) {
-  game_offscreen_buffer *Buffer = params->backBuffer;
+  wayne_offscreen_buffer *Buffer = params->backBuffer;
   game_state *GameState = Wayne_GetGameState(params->GameEngine);
 
   uint16 BlueOffset = GameState->BlueOffset;
@@ -117,7 +115,7 @@ void renderPlayerSystem(system_params *params) {
 #endif
 
   entity_manager *em = params->entityManager;
-  game_offscreen_buffer *backBuffer = params->backBuffer;
+  wayne_offscreen_buffer *backBuffer = params->backBuffer;
 
   entity *e = getPlayer(em);
   if (!e)
@@ -156,7 +154,7 @@ void renderShapeSystem(system_params *params) {
     return;
 #endif
 
-  game_offscreen_buffer *backBuffer = params->backBuffer;
+  wayne_offscreen_buffer *backBuffer = params->backBuffer;
 
   entity_manager *em = params->entityManager;
   int current_position = 0;
@@ -284,71 +282,23 @@ void keepInBoundsSystem(system_params *params) {
 }
 
 void handlePlayerInput(system_params *params) {
-#if SYSTEM_GUARDS
-  if (!params->entityManager)
-    return;
-#endif
+  game_state *GameState = Wayne_GetGameState(params->GameEngine);
+  wayne_controller_input Controller =
+      Wayne_getController((wayne_t *)params->GameEngine, 0);
 
-  entity_manager *em = params->entityManager;
-
-  entity *player = getPlayer(em);
-  if (!player)
-    return;
-
-  Velocity *vel = getComponentValue(em, player, "Velocity", Velocity);
-  if (!vel)
-    return;
-
-  float acceleration = 5.0;
-
-  u32 count = 0;
-  // TODO: loop through the Action entities and apply only the one that belongs
-  // to the current player
-#if 0
-  while (current) {
-    if (!current->value)
-      continue;
-    /*action *currentAction = getNodeValue(current, action);*/
-    action *currentAction = (action *)current->value;
-
-    switch (currentAction->kind) {
-    case ACTION_UP:
-      if (currentAction->state == ACTION_STATE_START)
-        vel->y -= acceleration;
-      if (currentAction->state == ACTION_STATE_STOP)
-        vel->y += acceleration;
-
-      break;
-
-    case ACTION_DOWN:
-      if (currentAction->state == ACTION_STATE_START)
-        vel->y += acceleration;
-      if (currentAction->state == ACTION_STATE_STOP)
-        vel->y -= acceleration;
-
-      break;
-
-    case ACTION_LEFT:
-      if (currentAction->state == ACTION_STATE_START)
-        vel->x -= acceleration;
-      if (currentAction->state == ACTION_STATE_STOP)
-        vel->x += acceleration;
-
-      break;
-
-    case ACTION_RIGHT:
-      if (currentAction->state == ACTION_STATE_START)
-        vel->x += acceleration;
-      if (currentAction->state == ACTION_STATE_STOP)
-        vel->x -= acceleration;
-
-      break;
-
-    default:
-      break;
-    }
-
-    current = popFromLinkedList(actionQueue);
+  if (Controller.MoveUp.isDown) {
+    GameState->PlayerPosition.y -= 2;
   }
-#endif
+
+  if (Controller.MoveDown.isDown) {
+    GameState->PlayerPosition.y += 2;
+  }
+
+  if (Controller.MoveLeft.isDown) {
+    GameState->PlayerPosition.x -= 2;
+  }
+
+  if (Controller.MoveRight.isDown) {
+    GameState->PlayerPosition.x += 2;
+  }
 }

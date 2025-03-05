@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../memory.h"
+#include "../../memory.h"
 #include "components.h"
 
 // FIXME: find a way to use the memory_arena and have dynamically sized arrays
