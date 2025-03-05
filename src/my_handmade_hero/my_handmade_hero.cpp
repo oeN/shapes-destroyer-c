@@ -40,8 +40,12 @@ u32 *PixelFromBuffer(game_offscreen_buffer *Buffer, i32 X, i32 Y) {
                  Buffer->BytesPerPixel * X);
 }
 
+inline void DrawPoint(game_offscreen_buffer *Buffer, vec2 Point, u32 Color) {
+  u32 *Pixel = PixelFromBuffer(Buffer, Point.x, Point.y);
+  *Pixel = Color;
+}
+
 void DrawLine(game_offscreen_buffer *Buffer, vec2 Start, vec2 End, u32 Color) {
-  // TODO: Makes sure the Start is the minimum one
   BoundVec2(Buffer, &Start);
   BoundVec2(Buffer, &End);
 
@@ -54,72 +58,63 @@ void DrawLine(game_offscreen_buffer *Buffer, vec2 Start, vec2 End, u32 Color) {
   i32 DeltaX = MaxX - MinX;
   i32 DeltaY = MaxY - MinY;
 
-  f32 Slope;
-  if (DeltaX && DeltaY)
+  f32 Slope = 0;
+  if (DeltaX != 0 && DeltaY != 0) {
     Slope = (f32)DeltaY / (f32)DeltaX;
-  else
-    Slope = 0;
-
-  f32 CumulativeSlope = (f32)(DeltaX > 0 ? MinY : MaxY);
-
-  i32 Direction = DeltaX > 0 ? 1 : -1;
-
-  i32 Min, Max;
-  if (Direction == 1) {
-    Min = MinX;
-    Max = MaxX;
-  } else {
-    Min = MaxX;
-    Max = MinX;
   }
 
-  bool EqualMinMax = Min == Max;
-  if (Min == Max) {
-    // make it print at least 1px
-    Max = Min + 1;
+  i32 Min = GetMin(MinX, MaxX);
+  i32 Max = GetMax(MinX, MaxX);
 
-    // printf("We're on the same column new min, max (%d, %d) - CumulativeSlope
-    // "
-    //        "%d - Slope %f\n",
-    //        Min, Max, (i32)CumulativeSlope, Slope);
-  }
+  // TODO: fix this function, I mean it works it prints lines in some way but it
+  // feels junky with these edge cases etc.
 
-  if (EqualMinMax) {
-    i32 Min = MinY < MaxY ? MinY : MaxY;
-    i32 Max = MinY < MaxY ? MaxY : MinY;
+  // 2 pixels tollerance in order to draw a vertical line
+  if (Min == Max || (Min + 1) == Max || (Min + 2) == Max) {
+    i32 Min = GetMin(MinY, MaxY);
+    i32 Max = GetMax(MinY, MaxY);
     i32 X = MinX;
 
+    // u32 *Pixel = PixelFromBuffer(Buffer, X, Min);
     for (i32 Y = Min; Y < Max; Y++) {
-      u32 *Pixel = PixelFromBuffer(Buffer, X, Y);
-      *Pixel = Color;
+      // *Pixel = Color;
+      // this is because the buffer is an array of u8 pointer that points to a
+      // u32
+      // Pixel = (u32 *)((u8 *)Pixel + Buffer->Pitch);
+
+      // NOTE: for now I'll stick with this more convenient code even if the one
+      // above should be faster
+      DrawPoint(Buffer, (vec2){X, Y}, Color);
     }
   } else {
+    f32 YOffset = (f32)(DeltaX > 0 ? MinY : MaxY);
     for (i32 X = Min; X < Max; X++) {
-      i32 Y = (i32)CumulativeSlope;
+      i32 Y = (i32)YOffset;
 
-      u32 *Pixel = PixelFromBuffer(Buffer, X, Y);
-      *Pixel = Color;
+      DrawPoint(Buffer, (vec2){X, Y}, Color);
 
-      CumulativeSlope += Slope;
+      YOffset += Slope;
     }
   }
 }
 
-void DrawPoint(game_offscreen_buffer *Buffer, vec2 Point, u32 Color) {
-  u32 *Pixel = PixelFromBuffer(Buffer, Point.x, Point.y);
-  *Pixel = Color;
-}
-
-void DrawShape(game_offscreen_buffer *BackBuffer, vec2 Center, f32 Radius,
-               u32 NumberOfSegments, u32 Color) {
+void DrawShape(game_offscreen_buffer *BackBuffer, f32 StartingAngle,
+               vec2 Center, f32 Radius, u32 NumberOfSegments, u32 Color) {
   f32 AngleStep = 360.0f / (f32)NumberOfSegments;
-  f32 CurrentAngle = 0;
+  f32 CurrentAngle = StartingAngle;
+  f32 LimitAngle = 360.0f + StartingAngle;
 
   vec2 Prev = {0};
 
-  while (CurrentAngle < 360.0f) {
+  u32 DebugColor = 0xFFFF00FF;
+  DrawPoint(BackBuffer, Center, DebugColor);
+
+  while (CurrentAngle < LimitAngle) {
     vec2 Point = Center + (vec2FromAngle(CurrentAngle) * Radius);
-    DrawPoint(BackBuffer, Point, 0xFFFF00FF);
+
+    // debug line
+    DrawLine(BackBuffer, Center, Point, DebugColor);
+
     if (Prev.x != 0 && Prev.y != 0) {
       DrawLine(BackBuffer, Prev, Point, Color);
     }
@@ -128,24 +123,15 @@ void DrawShape(game_offscreen_buffer *BackBuffer, vec2 Center, f32 Radius,
     Prev = Point;
   }
 
-  vec2 Point = Center + (vec2FromAngle(0) * Radius);
+  vec2 Point = Center + (vec2FromAngle(StartingAngle) * Radius);
   DrawLine(BackBuffer, Prev, Point, Color);
-
-#if 0
-  for (int i = 0; i < NumberOfSegments; i++) {
-  }
-
-  vec2 Start = *Points[0];
-
-  vec2 End = vec2FromAngle(CurrentAngle - AngleStep) * Radius;
-  End += Center;
-  DrawLine(BackBuffer, Start, End, Color);
-#endif
 }
 
-struct game_state {
-  vec2 PlayerPosition;
-};
+void DrawShape(game_offscreen_buffer *BackBuffer, vec2 Center, f32 Radius,
+               u32 NumberOfSegments, u32 Color) {
+
+  DrawShape(BackBuffer, 0.0f, Center, Radius, NumberOfSegments, Color);
+}
 
 extern "C" GAME_UPDATE_AND_RENDER(UpdateAndRender) {
   vec2 Position = {0};
@@ -182,5 +168,14 @@ extern "C" GAME_UPDATE_AND_RENDER(UpdateAndRender) {
   vec2 EndLine = StartLine + (vec2){HalfSize.x, 1.0f};
   DrawLine(BackBuffer, StartLine, EndLine, 0xFFFF0000);
 
-  DrawShape(BackBuffer, StartLine, 50.0f, 8, 0xFF0000FF);
+  GameState->CurrentAngle += 30.0f * deltaTime;
+
+  DrawShape(BackBuffer, GameState->CurrentAngle, (vec2){400.0f, 100.0f}, 50.0f,
+            8, 0xFF0000FF);
+  DrawShape(BackBuffer, GameState->CurrentAngle, (vec2){400.0f, 200.0f}, 50.0f,
+            3, 0xFF0000FF);
+  DrawShape(BackBuffer, GameState->CurrentAngle, (vec2){400.0f, 300.0f}, 50.0f,
+            4, 0xFF0000FF);
+  DrawShape(BackBuffer, GameState->CurrentAngle, (vec2){400.0f, 400.0f}, 50.0f,
+            5, 0xFF0000FF);
 }

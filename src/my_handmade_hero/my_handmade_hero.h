@@ -56,6 +56,11 @@ struct game_controller_input {
   };
 };
 
+struct game_state {
+  vec2 PlayerPosition;
+  f32 CurrentAngle;
+};
+
 #define GAME_UPDATE_AND_RENDER(name)                                           \
   void(name)(memory_arena * PermanentStorage, f32 deltaTime,                   \
              game_controller_input Controllers[MAX_N_CONTROLLERS],             \

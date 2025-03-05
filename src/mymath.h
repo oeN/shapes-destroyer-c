@@ -8,6 +8,8 @@
 
 #define Clamp(type, value, min, max)                                           \
   (type)(value < min ? min : (value > max ? max : value))
+#define GetMin(lhs, rhs) (lhs < rhs ? lhs : rhs)
+#define GetMax(lhs, rhs) (lhs > rhs ? lhs : rhs)
 
 vec2 vec2FromAngle(float angle);
 vec2 vec2Splat(float value);
