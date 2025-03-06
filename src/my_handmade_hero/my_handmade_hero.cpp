@@ -69,31 +69,30 @@ void DrawLine(game_offscreen_buffer *Buffer, vec2 Start, vec2 End, u32 Color) {
   // TODO: fix this function, I mean it works it prints lines in some way but it
   // feels junky with these edge cases etc.
 
-  // 2 pixels tollerance in order to draw a vertical line
-  if (Min == Max || (Min + 1) == Max || (Min + 2) == Max) {
-    i32 Min = GetMin(MinY, MaxY);
-    i32 Max = GetMax(MinY, MaxY);
-    i32 X = MinX;
+  f32 YOffset = (f32)(DeltaX > 0 ? MinY : MaxY);
 
-    // u32 *Pixel = PixelFromBuffer(Buffer, X, Min);
-    for (i32 Y = Min; Y < Max; Y++) {
-      // *Pixel = Color;
-      // this is because the buffer is an array of u8 pointer that points to a
-      // u32
-      // Pixel = (u32 *)((u8 *)Pixel + Buffer->Pitch);
+  i32 X = Min;
+  i32 Y = (i32)YOffset;
 
-      // NOTE: for now I'll stick with this more convenient code even if the one
-      // above should be faster
-      DrawPoint(Buffer, (vec2){X, Y}, Color);
-    }
-  } else {
-    f32 YOffset = (f32)(DeltaX > 0 ? MinY : MaxY);
-    for (i32 X = Min; X < Max; X++) {
-      i32 Y = (i32)YOffset;
+  while (X < Max) {
+    DrawPoint(Buffer, (vec2){X, Y}, Color);
 
-      DrawPoint(Buffer, (vec2){X, Y}, Color);
+    // FIXME: this works even if sometimes the lines are too thin or too thick
+    if (Slope > 1) {
 
+      f32 NextBump = (YOffset + Slope);
+      if (Y < NextBump) {
+        Y++;
+      } else {
+        X++;
+        YOffset += Slope;
+      }
+
+    } else {
+      X++;
       YOffset += Slope;
+
+      Y = (i32)YOffset;
     }
   }
 }
@@ -127,6 +126,13 @@ void DrawShape(game_offscreen_buffer *BackBuffer, f32 StartingAngle,
   DrawLine(BackBuffer, Prev, Point, Color);
 }
 
+/*
+struct shape {
+vec2 Center;
+f32 Radius;
+u32 NumberOfSegments;
+};
+ * */
 void DrawShape(game_offscreen_buffer *BackBuffer, vec2 Center, f32 Radius,
                u32 NumberOfSegments, u32 Color) {
 
@@ -138,6 +144,7 @@ extern "C" GAME_UPDATE_AND_RENDER(UpdateAndRender) {
   vec2 Dimensions = {(f32)BackBuffer->Width, (f32)BackBuffer->Height};
 
   game_controller_input Keyboard = Controllers[0];
+  game_controller_input Mouse = Controllers[1];
   game_state *GameState = (game_state *)PermanentStorage->startAddress;
 
   vec2 PlayerDelta = {0};
@@ -165,10 +172,23 @@ extern "C" GAME_UPDATE_AND_RENDER(UpdateAndRender) {
 
   vec2 HalfSize = PlayerSize * 0.5f;
   vec2 StartLine = GameState->PlayerPosition + HalfSize;
-  vec2 EndLine = StartLine + (vec2){HalfSize.x, 1.0f};
+
+  vec2 Direction = Mouse.MousePosition - StartLine;
+  Direction = vec2Normalize(Direction);
+  Direction = Direction * HalfSize.x;
+  vec2 EndLine = (StartLine + Direction);
+
   DrawLine(BackBuffer, StartLine, EndLine, 0xFFFF0000);
 
   GameState->CurrentAngle += 30.0f * deltaTime;
+
+  // debug the mouse position
+  DrawShape(BackBuffer, Mouse.MousePosition, 10.0f, 16, 0xffff0000);
+
+  // DrawLine(BackBuffer, (vec2){300.0f, 100.0f}, (vec2){303.0f, 300.0f},
+  //          0xFFFF0000);
+  // DrawLine(BackBuffer, (vec2){303.0f, 300.0f}, (vec2){600.0f, 303.0f},
+  //          0xFFFF0000);
 
   DrawShape(BackBuffer, GameState->CurrentAngle, (vec2){400.0f, 100.0f}, 50.0f,
             8, 0xFF0000FF);

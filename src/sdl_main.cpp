@@ -49,6 +49,7 @@ struct sdl_audio_buffer {
   int WavePeriod;
 };
 
+#define JOYSTICK_CONTROLLER_FIRST_ID 2
 struct sdl_controllers_mapping {
   int ControllersCount;
   // even if the 0 is always the keyboard, for convenience we create an array of
@@ -317,6 +318,10 @@ SDL_AppResult SDL_AppInit(void **_AppState, int Argc, char **Argv) {
     SDL_Log("the current refresh rate is %f", CurrentDisplayMode->refresh_rate);
     // TODO: add a debug build flag
     AppState->TargetRefreshRate = CurrentDisplayMode->refresh_rate / 2.0f;
+
+#if INTERNAL_BUILD
+    SDL_SetWindowPosition(AppState->Window, CurrentDisplayMode->w / 2, 100);
+#endif
   }
 
   AppState->TargetMsPerFrame = 1000.0f / AppState->TargetRefreshRate;
@@ -387,8 +392,8 @@ SDL_AppResult SDL_AppInit(void **_AppState, int Argc, char **Argv) {
 
   AppState->NewInput->Controllers[0] = KeyboardController;
   AppState->OldInput->Controllers[0] = KeyboardController;
-  AppState->OldInput->ControllersCount = 1;
-  AppState->NewInput->ControllersCount = 1;
+  AppState->OldInput->ControllersCount = JOYSTICK_CONTROLLER_FIRST_ID;
+  AppState->NewInput->ControllersCount = JOYSTICK_CONTROLLER_FIRST_ID;
 
   return SDL_APP_CONTINUE;
 }
@@ -482,6 +487,16 @@ void MySDL_AddJoystick(SDL_Event *Event, sdl_controllers_mapping *Controllers) {
 }
 
 game_controller_input *
+GetMouseController(sdl_controllers_mapping *Controllers) {
+  return &Controllers->Controllers[1];
+}
+
+game_controller_input *
+GetKeyboardController(sdl_controllers_mapping *Controllers) {
+  return &Controllers->Controllers[0];
+}
+
+game_controller_input *
 ControllerByJoystickId(SDL_JoystickID JoystickId,
                        sdl_controllers_mapping *Controllers) {
   for (int ControllerIndex = 0; ControllerIndex < Controllers->ControllersCount;
@@ -546,10 +561,16 @@ SDL_AppResult SDL_AppEvent(void *_AppState, SDL_Event *Event) {
   case SDL_EVENT_QUIT:
     return SDL_APP_SUCCESS;
 
+  case SDL_EVENT_MOUSE_MOTION: {
+    game_controller_input *MouseController =
+        GetMouseController(AppState->NewInput);
+    SDL_MouseMotionEvent MouseMotion = Event->motion;
+    MouseController->MousePosition = (vec2){MouseMotion.x, MouseMotion.y};
+  } break;
+
   case SDL_EVENT_JOYSTICK_ADDED: {
     MySDL_AddJoystick(Event, AppState->NewInput);
-  }
-    return SDL_APP_CONTINUE;
+  } break;
 
   case SDL_EVENT_JOYSTICK_AXIS_MOTION: {
     game_controller_input *CurrentController =
@@ -559,31 +580,28 @@ SDL_AppResult SDL_AppEvent(void *_AppState, SDL_Event *Event) {
       CurrentController->IsAnalog = true;
 
       if (AxisEvent.axis == 0)
-        CurrentController->StickY =
+        CurrentController->StickPosition.y =
             MySDL_NormalizeJoystickAxis(AxisEvent.value);
 
       if (AxisEvent.axis == 1)
-        CurrentController->StickX =
+        CurrentController->StickPosition.x =
             MySDL_NormalizeJoystickAxis(AxisEvent.value);
     }
-  }
-    return SDL_APP_CONTINUE;
+  } break;
 
   case SDL_EVENT_JOYSTICK_BUTTON_UP:
   case SDL_EVENT_JOYSTICK_BUTTON_DOWN: {
     MySDL_HandleButtonEvent(Event, AppState->NewInput);
-  }
-    return SDL_APP_CONTINUE;
-
+  } break;
   case SDL_EVENT_JOYSTICK_REMOVED: {
     // TODO: handle me
-  }
-    return SDL_APP_CONTINUE;
+  } break;
 
   case SDL_EVENT_KEY_DOWN:
   case SDL_EVENT_KEY_UP:
     return MySDL_HandleKeyEvent(Event, AppState->NewInput, AppState);
   }
+
   return SDL_APP_CONTINUE;
 }
 
@@ -618,9 +636,9 @@ internal void SwapAndResetControllers(app_state *AppState) {
   AppState->NewInput->Controllers[0] = ZeroKeyboard;
 
   game_controller_input *OldKeyboardController =
-      &AppState->OldInput->Controllers[0];
+      GetKeyboardController(AppState->OldInput);
   game_controller_input *NewKeyboardController =
-      &AppState->NewInput->Controllers[0];
+      GetKeyboardController(AppState->NewInput);
 
   for (int ButtonIndex = 0;
        ButtonIndex < ArraySize(OldKeyboardController->Buttons); ButtonIndex++) {

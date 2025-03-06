@@ -6,7 +6,7 @@ project(main)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # for debug symbols
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -DINTERNAL_BUILD")
 
 file(GLOB SRC_SOURCES "src/sdl_main.cpp") # trying unity build
 add_executable(${PROJECT_NAME} ${SRC_SOURCES})

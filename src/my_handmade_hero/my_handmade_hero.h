@@ -31,8 +31,10 @@ struct game_controller_button {
 struct game_controller_input {
   bool IsActive;
   bool IsAnalog;
-  float StickX;
-  float StickY;
+  union {
+    vec2 StickPosition;
+    vec2 MousePosition;
+  };
 
   union {
     game_controller_button Buttons[12];

@@ -79,6 +79,18 @@ union vec2 {
     result.y *= rhs;
     return result;
   }
+
+  vec2 operator/(f32 rhs) {
+    vec2 result = *this;
+    result.x /= rhs;
+    result.y /= rhs;
+    return result;
+  }
+
+  void operator/=(f32 rhs) {
+    this->x /= rhs;
+    this->y /= rhs;
+  }
 };
 
 union vec2i {
